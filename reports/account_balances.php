@@ -162,14 +162,12 @@ foreach ($sections as $key => $sec) {
     $sectionTotals[$key] = $total;
 }
 
-$totalAssets      = $sectionTotals['checking'] + $sectionTotals['savings']
-                  + $sectionTotals['invest']   + $sectionTotals['retirement']
-                  + $sectionTotals['asset'];
-$totalLiabilities = abs(min(0.0, $sectionTotals['credit']));
-$netWorth         = $totalAssets - $totalLiabilities;
+$totalAccountValue = $sectionTotals['checking'] + $sectionTotals['savings']
+                    + $sectionTotals['credit']   + $sectionTotals['invest']
+                    + $sectionTotals['retirement'] + $sectionTotals['asset'];
 
-// % of net worth base: use abs(netWorth) so sign of each account drives the sign of its %
-$pctBase = abs($netWorth) > 0.005 ? abs($netWorth) : null;
+// % of total base: use Total Account Value so sign of each account drives the sign of its %
+$pctBase = abs($totalAccountValue) > 0.005 ? abs($totalAccountValue) : null;
 
 // ── CSV Export ─────────────────────────────────────────────────
 if (($_GET['export'] ?? '') === 'csv') {
@@ -187,7 +185,7 @@ if (($_GET['export'] ?? '') === 'csv') {
             $bal    = displayBalance($a, $acctMarketValue);
             $pct    = $pctBase !== null ? round(($key === 'credit' ? -abs($bal) : $bal) / $pctBase * 100, 1) : '';
             $csvRows[] = [$sectionLabels[$key], $a['name'], $a['institution'] ?: '',
-                          number_format(abs($bal), 2, '.', ''), $pct !== '' ? $pct . '%' : ''];
+                          number_format($bal, 2, '.', ''), $pct !== '' ? $pct . '%' : ''];
             $cashRow = $cashByInvId[(int)$a['id']] ?? null;
             if ($cashRow) {
                 $cashBal = (float)$cashRow['current_balance'];
@@ -199,12 +197,10 @@ if (($_GET['export'] ?? '') === 'csv') {
             }
         }
     }
-    $csvRows[] = ['Total Assets',      '', '', number_format($totalAssets, 2, '.', ''),      ''];
-    $csvRows[] = ['Total Liabilities', '', '', number_format($totalLiabilities, 2, '.', ''),  ''];
-    $csvRows[] = ['Net Worth',         '', '', number_format($netWorth, 2, '.', ''),          ''];
+    $csvRows[] = ['Total Account Value', '', '', number_format($totalAccountValue, 2, '.', ''), ''];
     outputCsv(
         'account_balances_' . $asOf . '.csv',
-        ['Section', 'Account', 'Institution', 'Balance', '% of Net Worth'],
+        ['Section', 'Account', 'Institution', 'Balance', '% of Total'],
         $csvRows
     );
 }
@@ -251,16 +247,8 @@ include __DIR__ . '/../includes/header.php';
 
 <div class="report-tiles mb-4">
   <div class="report-tile tile-positive">
-    <div class="tile-label">Total Assets</div>
-    <div class="tile-value"><?= formatMoney($totalAssets) ?></div>
-  </div>
-  <div class="report-tile tile-negative">
-    <div class="tile-label">Total Liabilities</div>
-    <div class="tile-value"><?= formatMoney($totalLiabilities) ?></div>
-  </div>
-  <div class="report-tile <?= $netWorth >= 0 ? 'tile-positive' : 'tile-negative' ?>">
-    <div class="tile-label">Net Worth</div>
-    <div class="tile-value"><?= formatMoney($netWorth) ?></div>
+    <div class="tile-label">Total Account Value</div>
+    <div class="tile-value"><?= formatMoney($totalAccountValue) ?></div>
   </div>
 </div>
 
@@ -282,7 +270,7 @@ function renderSection(array $sec, string $key, array $cashByInvId, array $acctM
         <th>Institution</th>
         <th class="text-end"><?= $isInvest ? 'Market Value' : 'Balance' ?></th>
         <?php if ($pctBase !== null): ?>
-        <th class="text-end">% of Net Worth</th>
+        <th class="text-end">% of Total</th>
         <?php endif; ?>
       </tr>
     </thead>
@@ -292,7 +280,7 @@ function renderSection(array $sec, string $key, array $cashByInvId, array $acctM
         $balCls  = $isCredit ? 'gain-neg' : (round($bal, MONEY_DECIMALS) < 0 ? 'gain-neg' : '');
         $cashRow = $cashByInvId[(int)$a['id']] ?? null;
         $hasMV   = $isInvest && isset($acctMarketValue[(int)$a['id']]);
-        // % uses signed contribution: liabilities reduce net worth so show negative
+        // % uses signed contribution: credit card balances are shown as negative
         $pct = $pctBase !== null ? round(($isCredit ? -abs($bal) : $bal) / $pctBase * 100, 1) : null;
     ?>
       <tr class="ab-row-main">
