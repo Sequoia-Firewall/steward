@@ -1,0 +1,45 @@
+Steward — Personal Use License
+
+Steward is a 7312.us project.
+
+Copyright (c) 2026. All rights reserved.
+
+This software and associated documentation files (the "Software") are
+provided under the following terms:
+
+1. GRANT OF LICENSE
+   Permission is granted to any individual to install, run, and use the
+   Software for personal, non-commercial purposes only, including
+   personal modifications for that individual's own use.
+
+2. PROHIBITED USES
+   Without prior written permission from the copyright holder, you may
+   NOT:
+     a. Use the Software, in whole or in part, for any commercial
+        purpose, including but not limited to selling, licensing,
+        renting, or offering it (or any derivative of it) as a paid or
+        ad-supported product or service.
+     b. Repurpose, rebrand, or redistribute the Software, or any
+        derivative work based on it, as a competing or standalone
+        product under a different name.
+     c. Use the Software to provide hosted, managed, or "software as a
+        service" offerings to third parties.
+     d. Sublicense, sell, or transfer any rights granted under this
+        license to any other party.
+
+3. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE
+   SOFTWARE.
+
+4. TERMINATION
+   This license is automatically terminated if you violate any of its
+   terms. Upon termination, you must cease all use of the Software and
+   destroy any copies in your possession.
+
+5. CONTACT
+   For commercial licensing, permissions beyond the scope of this
+   license, or any other inquiries, contact: steward@7312.us

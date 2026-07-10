@@ -1,0 +1,4 @@
+.claude/worktrees/
+config/database.php
+setup/.installed
+priorities.txt

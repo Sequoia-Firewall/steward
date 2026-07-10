@@ -1,0 +1,15 @@
+RewriteEngine On
+
+# Named pretty URLs (most specific first)
+RewriteRule ^reports/saved/([0-9]+)/?$      reports/saved_view.php?id=$1    [L,QSA]
+RewriteRule ^portfolio/security/([^/]+)/?$  portfolio/security.php?slug=$1  [L,QSA]
+
+# Explicit rule: /setup (no trailing slash) → setup.php
+# Without this, Apache matches the setup/ directory and bypasses the rewrite below,
+# causing a redirect loop with index.php on a fresh install (no instance_name yet).
+RewriteRule ^setup$ setup.php [L,QSA]
+
+# Strip .php — if the request is not an existing file, try .php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.+?)/?$ $1.php [L,QSA]

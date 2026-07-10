@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Guide — Steward</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:   #002f6c;
+  --blue2:  #0057b7;
+  --border: #dde3ed;
+  --bg:     #f4f7fb;
+  --text:   #1a1a2e;
+  --muted:  #6b7280;
+  --green:  #198754;
+  --warn:   #b45309;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ── Top bar ───────────────────────────────────────────────── */
+.topbar {
+  background: var(--blue);
+  color: #fff;
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.topbar-title { font-size: 1.05rem; font-weight: 700; }
+.topbar-sub   { font-size: .8rem; opacity: .65; margin-left: 6px; }
+.topbar a     { color: rgba(255,255,255,.75); font-size: .85rem; margin-left: auto; text-decoration: none; }
+.topbar a:hover { color: #fff; }
+
+/* ── Layout ────────────────────────────────────────────────── */
+.layout {
+  display: flex;
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 16px;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────── */
+.sidebar {
+  width: 230px;
+  flex-shrink: 0;
+  padding: 28px 0 60px;
+  position: sticky;
+  top: 52px;
+  height: calc(100vh - 52px);
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  font-size: .875rem;
+}
+.sidebar-section {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  padding: 20px 20px 6px;
+}
+.sidebar-section:first-child { padding-top: 4px; }
+.sidebar a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 0;
+  line-height: 1.3;
+}
+.sidebar a:hover  { background: var(--bg); color: var(--blue2); }
+.sidebar a.active { background: #e8eef8; color: var(--blue); font-weight: 600; border-left: 3px solid var(--blue2); padding-left: 17px; }
+.sidebar i { font-size: .95rem; width: 16px; flex-shrink: 0; color: var(--muted); }
+.sidebar a:hover i, .sidebar a.active i { color: var(--blue2); }
+
+/* ── Content ───────────────────────────────────────────────── */
+.content {
+  flex: 1;
+  min-width: 0;
+  padding: 36px 40px 80px;
+}
+
+/* ── Typography ────────────────────────────────────────────── */
+h1 { font-size: 1.7rem; font-weight: 700; color: var(--blue); margin-bottom: 8px; }
+h2 {
+  font-size: 1.25rem; font-weight: 700; color: var(--blue);
+  margin-top: 48px; margin-bottom: 14px;
+  padding-bottom: 8px; border-bottom: 2px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+h2:first-of-type { margin-top: 24px; }
+h3 { font-size: 1rem; font-weight: 700; margin-top: 22px; margin-bottom: 8px; color: var(--text); }
+p  { line-height: 1.7; margin-bottom: 12px; color: #374151; }
+ul, ol { padding-left: 20px; margin-bottom: 12px; }
+li { line-height: 1.7; margin-bottom: 3px; color: #374151; }
+strong { color: var(--text); }
+code {
+  background: #eef1f6;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: .875em;
+  font-family: 'Consolas', 'Courier New', monospace;
+  color: #b91c1c;
+}
+
+.intro {
+  font-size: 1rem;
+  color: var(--muted);
+  margin-bottom: 32px;
+  max-width: 680px;
+  line-height: 1.7;
+}
+
+/* ── Callout boxes ──────────────────────────────────────────── */
+.tip, .note, .warn {
+  border-radius: 8px;
+  padding: 13px 16px;
+  margin: 16px 0;
+  font-size: .9rem;
+  line-height: 1.6;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.tip  { background: #f0faf3; border: 1px solid #c3e6cb; color: #155724; }
+.note { background: #f0f7ff; border: 1px solid #b8d4f5; color: #0c3680; }
+.warn { background: #fffbf0; border: 1px solid #fcd34d; color: #78350f; }
+.tip i, .note i, .warn i { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+
+/* ── Feature table ──────────────────────────────────────────── */
+.feature-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0 20px;
+  font-size: .9rem;
+}
+.feature-table th {
+  background: var(--bg);
+  color: var(--blue);
+  font-weight: 700;
+  padding: 9px 14px;
+  text-align: left;
+  border: 1px solid var(--border);
+}
+.feature-table td {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.6;
+  color: #374151;
+}
+.feature-table tr:nth-child(even) td { background: var(--bg); }
+
+/* ── Step list ──────────────────────────────────────────────── */
+.steps { counter-reset: step; list-style: none; padding: 0; margin: 12px 0 20px; }
+.steps li {
+  counter-increment: step;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  line-height: 1.6;
+  color: #374151;
+}
+.steps li::before {
+  content: counter(step);
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  background: var(--blue2);
+  color: #fff;
+  border-radius: 50%;
+  font-size: .8rem;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  margin-top: 1px;
+}
+
+/* ── Badge ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: .75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.badge-admin  { background: #dbeafe; color: #1e40af; }
+.badge-user   { background: #dcfce7; color: #166534; }
+.badge-viewer { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+
+/* ── Section anchor offset fix ──────────────────────────────── */
+.anchor { display: block; position: relative; top: -70px; visibility: hidden; }
+
+/* ── TOC version tag ────────────────────────────────────────── */
+.version-tag {
+  font-size: .75rem;
+  color: var(--muted);
+  margin-top: 4px;
+  padding: 0 20px 16px;
+}
+
+/* ── SQL code blocks ────────────────────────────────────────── */
+pre {
+  background: #1e2433;
+  color: #cdd6f4;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 14px 0 20px;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: .82rem;
+  line-height: 1.65;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+.sql-kw   { color: #89b4fa; font-weight: 600; }   /* SELECT, UPDATE … */
+.sql-fn   { color: #a6e3a1; }                       /* COUNT(), SUM() … */
+.sql-str  { color: #f9e2af; }                       /* string literals  */
+.sql-cmt  { color: #6c7086; font-style: italic; }  /* -- comments      */
+.schema-tbl { font-size: .9rem; }
+.schema-tbl td:first-child { font-family: 'Consolas', 'Courier New', monospace; color: #b91c1c; white-space: nowrap; font-size: .85rem; }
+.schema-tbl td:nth-child(2) { color: var(--muted); font-size: .82rem; white-space: nowrap; }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .layout { padding: 0; }
+  .sidebar { display: none; }
+  .content { padding: 24px 18px 60px; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <i class="bi bi-journal-text" style="font-size:1.25rem"></i>
+  <span class="topbar-title">Steward</span>
+  <span class="topbar-sub">User Guide</span>
+  <a href="/steward/"><i class="bi bi-arrow-left"></i> Back to App</a>
+</div>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+    <div class="version-tag">Version 2026R1</div>
+
+    <div class="sidebar-section">Getting Started</div>
+    <a href="#overview"><i class="bi bi-house-door"></i> Overview</a>
+    <a href="#navigation"><i class="bi bi-compass"></i> Navigation</a>
+    <a href="#roles"><i class="bi bi-person-badge"></i> User Roles</a>
+
+    <div class="sidebar-section">Accounts</div>
+    <a href="#accounts"><i class="bi bi-wallet2"></i> Account Types</a>
+    <a href="#register"><i class="bi bi-list-ul"></i> Transaction Register</a>
+    <a href="#transactions"><i class="bi bi-pencil-square"></i> Entering Transactions</a>
+    <a href="#reconcile"><i class="bi bi-check2-square"></i> Reconciliation</a>
+
+    <div class="sidebar-section">Money Management</div>
+    <a href="#categories"><i class="bi bi-tags"></i> Categories</a>
+    <a href="#payees"><i class="bi bi-person-lines-fill"></i> Payees</a>
+    <a href="#bills"><i class="bi bi-calendar-check"></i> Bills &amp; Scheduled Items</a>
+    <a href="#budget"><i class="bi bi-bar-chart-line"></i> Budgets</a>
+    <a href="#goals"><i class="bi bi-piggy-bank"></i> Savings Goals</a>
+    <a href="#forecast"><i class="bi bi-graph-up"></i> Forecast</a>
+
+    <div class="sidebar-section">Investments</div>
+    <a href="#portfolio"><i class="bi bi-briefcase"></i> Portfolio</a>
+    <a href="#watchlist"><i class="bi bi-bookmark-star"></i> Watchlist</a>
+    <a href="#holdings"><i class="bi bi-pie-chart"></i> Holdings</a>
+    <a href="#prices"><i class="bi bi-currency-dollar"></i> Prices</a>
+
+    <div class="sidebar-section">Data &amp; Reports</div>
+    <a href="#reports"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    <a href="#search"><i class="bi bi-search"></i> Search</a>
+    <a href="#import"><i class="bi bi-upload"></i> Importing Data</a>
+    <a href="#converter"><i class="bi bi-arrow-left-right"></i> Statement Converter</a>
+
+    <div class="sidebar-section">Administration</div>
+    <a href="#settings"><i class="bi bi-gear"></i> Settings</a>
+    <a href="#users"><i class="bi bi-people"></i> Users</a>
+    <a href="#backup"><i class="bi bi-archive"></i> Backup &amp; Restore</a>
+
+    <div class="sidebar-section">Advanced</div>
+    <a href="#schema"><i class="bi bi-database"></i> Database Schema</a>
+    <a href="#support"><i class="bi bi-life-preserver"></i> Support</a>
+    <a href="#donate"><i class="bi bi-heart"></i> Donate</a>
+    <a href="#license"><i class="bi bi-file-earmark-text"></i> License</a>
+  </nav>
+
+  <!-- ── Main content ─────────────────────────────────────── -->
+  <main class="content">
+
+    <span class="anchor" id="overview"></span>
+    <h1><i class="bi bi-journal-text" style="margin-right:10px"></i>Steward User Guide</h1>
+    <p class="intro">
+      Steward is a self-hosted personal finance application for tracking bank accounts,
+      credit cards, investments, loans, and budgets. This guide covers every major feature.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <h2><i class="bi bi-house-door"></i> Dashboard</h2>
+
+    <p>
+      The Dashboard is the home screen. It displays a collection of <strong>widgets</strong>
+      that give you an at-a-glance view of your finances.
+    </p>
+
+    <p>
+      Next to today's date in the Dashboard header, Steward shows market-data status:
+      <strong>Online services not configured</strong> (provider not set up),
+      <strong>No quotes updated</strong> (provider configured but no successful fetch yet), or
+      <strong>Last updated: ...</strong> after quotes are fetched. Administrators can click the
+      setup link in the warning to open <strong>Gear → Online Services</strong>.
+    </p>
+
+    <h3>Available Widgets</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Widget</th><th>What it shows</th></tr>
+      <tr><td>Favorite Accounts</td><td>Running balances for accounts starred as favorites. The favorite flag is shared across all users &mdash; starring or unstarring an account affects what everyone sees.</td></tr>
+      <tr><td>Recent Transactions</td><td>The last 10 transactions across all accounts.</td></tr>
+      <tr><td>Monthly Spending</td><td>Current month spending vs. prior month by category.</td></tr>
+      <tr><td>Budget</td><td>Budget progress bars for the current month.</td></tr>
+      <tr><td>Upcoming Bills</td><td>Bills and scheduled items due in the next 30 days.</td></tr>
+      <tr><td>All Accounts</td><td>Every account grouped by type with balances.</td></tr>
+      <tr><td>Key Indicators</td><td>Net worth, total assets, total liabilities, and liquid cash.</td></tr>
+      <tr><td>Savings Goals</td><td>Progress toward each active savings goal.</td></tr>
+      <tr><td>Loans</td><td>Outstanding loan balances and next payment dates.</td></tr>
+      <tr><td>Market Indexes</td><td>Live quotes for S&amp;P 500, Dow, NASDAQ, and other indices.</td></tr>
+      <tr><td>Top Movers</td><td>Biggest daily price changes across your holdings.</td></tr>
+      <tr><td>Portfolio Snapshot</td><td>Holdings pie chart by market value.</td></tr>
+      <tr><td>Asset Allocation</td><td>Portfolio breakdown by asset class.</td></tr>
+      <tr><td>Favorite Reports</td><td>Quick links to reports saved as favorites. This list (and its order) is shared across all users, not personal to each login.</td></tr>
+      <tr><td>Bookmarks</td><td>Custom links you've added for quick access. Unlike Favorite Accounts/Reports, bookmarks are private to your own login &mdash; use this widget if you want a personal shortcut list instead of a shared one.</td></tr>
+      <tr><td>Notepad</td><td>Shared free-text note pad visible to all logged-in users. Edits auto-save after a short pause and show who last made changes.</td></tr>
+    </table>
+
+    <h3>Customizing the Dashboard</h3>
+    <ul>
+      <li><strong>Reorder:</strong> Click <strong>Reorder</strong> to enter drag-and-drop mode. Drag any widget by its header to reposition it. Click <strong>Save</strong> to keep the new order or <strong>Reset</strong> to restore the default layout and show all widgets.</li>
+      <li><strong>Hide/show:</strong> Click the <i class="bi bi-gear-fill"></i> icon on any widget header to hide it or adjust its account filter. Hidden widgets can be restored from the same gear menu.</li>
+      <li><strong>Maximize:</strong> Click the <i class="bi bi-arrows-fullscreen"></i> icon on any widget header to open it in a full-size popup. Charts are captured as images in the popup.</li>
+      <li>Each user's layout is saved independently.</li>
+    </ul>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="navigation"></span>
+    <h2><i class="bi bi-compass"></i> Navigation</h2>
+
+    <p>The top navigation bar provides access to all sections:</p>
+    <ul>
+      <li><strong>Dashboard</strong> — home screen with widgets</li>
+      <li><strong>Accounts</strong> — list of all your accounts</li>
+      <li><strong>Loans</strong> — loan accounts and amortization schedules</li>
+      <li><strong>Categories</strong> — manage income and expense categories</li>
+      <li><strong>Payees</strong> — manage payee/merchant records</li>
+      <li><strong>Bills</strong> — scheduled recurring transactions</li>
+      <li><strong>Budget</strong> — budget management</li>
+      <li><strong>Goals</strong> — savings goal tracker</li>
+      <li><strong>Forecast</strong> — projected account balance over time</li>
+      <li><strong>Reports</strong> — pre-built and custom financial reports</li>
+      <li><strong>Portfolio</strong> — investment security management and pricing</li>
+      <li><strong>Watchlist</strong> — track securities of interest without holding them</li>
+      <li><strong>Search</strong> — full-text transaction search</li>
+      <li><strong><i class="bi bi-gear"></i> Gear menu</strong> — Settings, Preferences, Import, Users, Backup, and Migrations</li>
+    </ul>
+    <p>
+      The <strong>left sidebar</strong> lists all your accounts grouped by type. Click any account
+      to jump directly to its register. Click <strong>+ New Account</strong> at the top of the
+      sidebar to add one. Within each group, accounts can be <strong>reordered by drag-and-drop</strong>
+      — grab the <i class="bi bi-grip-vertical"></i> handle that appears on hover and drag to your
+      preferred position.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="roles"></span>
+    <h2><i class="bi bi-person-badge"></i> User Roles</h2>
+
+    <p>Every user is assigned one of three roles:</p>
+    <table class="feature-table">
+      <tr>
+        <th>Role</th>
+        <th>Permissions</th>
+      </tr>
+      <tr>
+        <td><span class="badge badge-viewer">Viewer</span></td>
+        <td>Read-only access. Can view all accounts, transactions, reports, and the portfolio. Cannot add, edit, or delete anything.</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-user">User</span></td>
+        <td>Full read-write access. Can create and edit transactions, accounts, categories, budgets, bills, goals, and import data. Cannot manage other users or access admin settings.</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-admin">Administrator</span></td>
+        <td>All user permissions plus: manage users, change application settings, run database maintenance, restore backups, and delete reconciled transactions.</td>
+      </tr>
+    </table>
+
+    <div class="tip"><i class="bi bi-lightbulb-fill"></i>
+      The default admin account created during installation is <code>admin</code> with password
+      <code>Admin123!</code>. Change the password immediately after your first login via
+      <strong>Gear → Users</strong>.
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="accounts"></span>
+    <h2><i class="bi bi-wallet2"></i> Account Types</h2>
+
+    <p>
+      Accounts are the foundation of Steward. Every transaction belongs to an account.
+      Navigate to <strong>Accounts</strong> in the top nav to see all your accounts and their
+      current balances.
+    </p>
+
+    <table class="feature-table">
+      <tr><th style="width:160px">Type</th><th>Use for</th></tr>
+      <tr><td>Checking</td><td>Everyday bank checking accounts.</td></tr>
+      <tr><td>Savings</td><td>Savings accounts and money market accounts.</td></tr>
+      <tr><td>Credit Card</td><td>Credit card accounts. Balances show as negative (amounts owed).</td></tr>
+      <tr><td>Investment</td><td>Brokerage accounts holding stocks, ETFs, mutual funds, or bonds. Optionally paired with a companion <em>Cash</em> sub-account for cash transactions.</td></tr>
+      <tr><td>Crypto</td><td>Cryptocurrency wallets and exchange accounts.</td></tr>
+      <tr><td>Asset</td><td>Non-liquid assets (e.g. real estate, vehicles, valuables). Tracked for net worth purposes.</td></tr>
+      <tr><td>Loan</td><td>Mortgages, auto loans, or any amortizing debt. Automatically generates a payment schedule.</td></tr>
+    </table>
+
+    <h3>Creating an Account</h3>
+    <ol class="steps">
+      <li>Click <strong>+ New Account</strong> in the sidebar or go to <strong>Accounts → New Account</strong>.</li>
+      <li>Choose <strong>Enter Manually</strong> to fill in the form, or <strong>Import from File</strong> to create the account and load transactions simultaneously.</li>
+      <li>Fill in the account name, type, institution, and opening balance. A <strong>Currency</strong> field is present but is reserved for future multi-currency support — all amounts are currently displayed using the application-wide currency symbol set under <strong>Preferences → General</strong>, regardless of this per-account setting.</li>
+      <li>For <strong>Investment</strong> accounts, check <em>Create companion cash account</em> if your brokerage keeps cash and holdings in the same account.</li>
+      <li>For <strong>Loan</strong> accounts, enter the original amount, annual interest rate, term, and start date — the monthly payment is calculated automatically.</li>
+      <li>Click <strong>Create Account</strong>.</li>
+    </ol>
+
+    <h3>Editing &amp; Deleting</h3>
+    <p>
+      From the Accounts list, use the <i class="bi bi-pencil"></i> Edit icon to change account
+      details. Accounts can be deactivated (hidden from the sidebar) rather than deleted to
+      preserve historical transactions.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="register"></span>
+    <h2><i class="bi bi-list-ul"></i> Transaction Register</h2>
+
+    <p>
+      Click any account name to open its <strong>register</strong> — a chronological list of all
+      transactions with a running balance.
+    </p>
+
+    <ul>
+      <li>Transactions are sorted by date, newest first by default. Click <strong>Date</strong> to toggle sort order.</li>
+      <li>The <strong>Balance</strong> column shows the running total after each transaction.</li>
+      <li>The <strong>C</strong> column shows cleared status: blank = uncleared, <code>c</code> = cleared, <code>R</code> = reconciled.</li>
+      <li>Check <strong>Show Txn #</strong> above the register to reveal each transaction's internal ID — the same number shown by the <a href="#maintenance">Duplicate Transactions</a> integrity check, useful for cross-referencing.</li>
+      <li>Click any transaction row to expand and edit it inline.</li>
+      <li>Use the <strong>filter bar</strong> (search box above the register) to search within the account by payee, memo, or amount.</li>
+    </ul>
+
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      Reconciled transactions (<code>R</code>) are locked and cannot be deleted by regular users —
+      only administrators can remove them.
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="transactions"></span>
+    <h2><i class="bi bi-pencil-square"></i> Entering Transactions</h2>
+
+    <p>Click the <strong>+ New Transaction</strong> area at the top of any register to expand the entry form.</p>
+
+    <h3>Transaction Types</h3>
+    <table class="feature-table">
+      <tr><th style="width:160px">Type</th><th>Description</th></tr>
+      <tr><td>Withdrawal / Payment</td><td>Money leaving the account (expense, bill payment, purchase).</td></tr>
+      <tr><td>Deposit</td><td>Money entering the account (paycheck, refund, income).</td></tr>
+      <tr><td>Transfer</td><td>Move money between two of your accounts. Both sides are created automatically.</td></tr>
+      <tr><td>Investment</td><td>Buy, sell, add shares, remove shares, stock splits, reinvested dividends/capital gains, and cash income. Available only on Investment and Crypto accounts. See activity types below.</td></tr>
+    </table>
+
+    <h3>Investment Activity Types</h3>
+    <table class="feature-table">
+      <tr><th style="width:200px">Activity</th><th>Description</th></tr>
+      <tr><td>Buy</td><td>Purchase shares. Reduces the linked cash account by the total cost (qty × price + commission).</td></tr>
+      <tr><td>Sell</td><td>Sell shares. Increases the linked cash account by the proceeds (qty × price − commission).</td></tr>
+      <tr><td>Add</td><td>Add shares to a position with no cash movement — used for share transfers in, grants, or manual adjustments. Optionally enter a total cost basis.</td></tr>
+      <tr><td>Remove</td><td>Remove shares from a position with no cash movement — used for share transfers out or expirations.</td></tr>
+      <tr><td>Split</td><td>Record a stock split. Enter the new share quantity after the split.</td></tr>
+      <tr><td>Reinvest Dividend</td><td>Dividend or interest automatically reinvested into additional shares. Both sides (investment + shares) stay in the investment account.</td></tr>
+      <tr><td>Reinvest Cap Gain</td><td>Capital gain distribution automatically reinvested into additional shares.</td></tr>
+      <tr><td>Dividend (Cash)</td><td>Cash dividend or capital gain distribution deposited into the linked cash account. Select the security name as the payee and enter the dollar amount. A matching deposit is created automatically in the cash account.</td></tr>
+      <tr><td>Interest (Cash)</td><td>Interest income deposited into the linked cash account. Works the same way as Dividend (Cash).</td></tr>
+    </table>
+
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      Securities income never needs a category. The linked cash-account deposit created by
+      Dividend (Cash), Interest (Cash), Reinvest Dividend, or Reinvest Cap Gain shows its activity
+      (e.g. "Dividend") in the register's category column instead of a category — this is expected
+      and is how the <a href="#reports">Investment Income report</a> picks it up automatically.
+    </div>
+
+    <h3>Split Transactions</h3>
+    <p>
+      A single transaction can be split across multiple categories. In the entry form, check
+      <strong>Split</strong> and add a line for each category portion. The amounts must sum
+      to the total transaction amount.
+    </p>
+
+    <h3>Transfers</h3>
+    <p>
+      Select <strong>Transfer</strong> as the type and choose the destination account. Money
+      Manager creates matching entries in both accounts automatically. Transfers appear in each
+      account's register with an arrow icon and the paired account name as the category.
+    </p>
+
+    <h3>Cleared Status</h3>
+    <p>Use the status field on each transaction to track reconciliation progress:</p>
+    <ul>
+      <li><strong>Blank</strong> — transaction has not yet appeared on a statement.</li>
+      <li><strong>Cleared (c)</strong> — transaction appeared on your bank statement but the account has not been fully reconciled yet.</li>
+      <li><strong>Reconciled (R)</strong> — transaction is confirmed and locked after a successful reconciliation.</li>
+    </ul>
+
+    <h3>Paycheck Templates</h3>
+    <p>
+      For paychecks with consistent gross-to-net breakdowns (gross pay, taxes, benefits
+      deductions), set up a <strong>Paycheck Template</strong> once and use it each pay period.
+      Templates are created and managed from the account register (<em>Paycheck</em> button in the
+      transaction entry toolbar).
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="reconcile"></span>
+    <h2><i class="bi bi-check2-square"></i> Reconciliation</h2>
+
+    <h3>Banking Accounts (Checking, Savings, Credit Card, Investment Cash)</h3>
+    <p>
+      Reconciliation matches your register against a bank or credit card statement to confirm
+      accuracy. From the account register, click <i class="bi bi-check2-square"></i>
+      <strong>Reconcile</strong>.
+    </p>
+    <ol class="steps">
+      <li>Enter the <strong>Statement Ending Balance</strong> and <strong>Statement Date</strong> from your paper or online statement.</li>
+      <li>Check off each transaction that appears on the statement. Cleared transactions are pre-checked automatically.</li>
+      <li>The <strong>Difference</strong> in the footer must reach <strong>$0.00</strong> before you can finish.</li>
+      <li>Click <strong>Finish Reconciliation</strong>. All checked transactions are marked <code>R</code> (Reconciled) and locked.</li>
+    </ol>
+
+    <h3>How the Math Works</h3>
+    <p>
+      The reconcile page computes a <strong>Cleared Balance</strong> in real time as you check or uncheck transactions:
+    </p>
+    <ul>
+      <li><strong>Opening Balance</strong> = account opening balance + sum of all previously reconciled transactions. Previously reconciled transactions do not appear in the list — their totals are already folded into this number, so each reconciliation picks up exactly where the last one left off.</li>
+      <li><strong>Cleared Balance</strong> = Opening Balance + sum of all currently checked transactions.</li>
+      <li><strong>Difference</strong> = Statement Ending Balance − Cleared Balance.</li>
+    </ul>
+    <p>
+      The <strong>Finish</strong> button enables only when Difference = $0.00. Work through the list until every transaction on your statement is checked and the difference reaches zero.
+    </p>
+
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      <strong>Credit card accounts</strong> show balances as the amount owed (a positive number). Enter the amount owed from your statement as a positive number — the sign conversion is handled automatically.
+    </div>
+
+    <h3>Cleared vs. Reconciled Transactions</h3>
+    <p>
+      Every transaction has one of three statuses, visible in the <strong>C</strong> column of the register:
+    </p>
+    <table class="feature-table">
+      <tr><th style="width:130px">Status</th><th>Meaning</th><th>Behavior in Reconcile</th></tr>
+      <tr>
+        <td><strong>Blank</strong> — uncleared</td>
+        <td>Transaction has not yet appeared on a statement.</td>
+        <td>Shown in the reconcile list, <em>not</em> pre-checked. Check it manually if it appears on this statement.</td>
+      </tr>
+      <tr>
+        <td><code>c</code> — cleared</td>
+        <td>Transaction appeared on a prior statement but the account hasn't been fully reconciled yet.</td>
+        <td>Shown in the reconcile list and <strong>pre-checked</strong> automatically.</td>
+      </tr>
+      <tr>
+        <td><code>R</code> — reconciled</td>
+        <td>Transaction was confirmed during a completed reconciliation.</td>
+        <td><strong>Not shown</strong> — already counted in the Opening Balance. Locked against deletion by non-admins.</td>
+      </tr>
+    </table>
+
+    <h3>First-Time Reconciliation (Large Backlog of Cleared Transactions)</h3>
+    <p>
+      If an account has never been reconciled, the Opening Balance will be the account's opening
+      balance (typically $0 for imported accounts), and <em>all</em> existing cleared transactions
+      will appear in the list, pre-checked. The sum of those pre-checked transactions plus any
+      unchecked uncleared transactions must equal your statement ending balance.
+    </p>
+    <p>
+      If your statement balance matches the current account balance but the Difference is not zero,
+      check whether any <strong>uncleared</strong> transactions (shown but not pre-checked) need to
+      be included. For example, if your register balance is $0.32 and includes a pending −$0.14
+      transaction, the pre-checked cleared transactions will sum to $0.46 — you must also check
+      the −$0.14 uncleared item for the Difference to reach $0.00.
+    </p>
+
+    <h3>Investment Cash Accounts</h3>
+    <p>
+      Investment cash sub-accounts (the companion cash account paired with a brokerage account)
+      are reconciled exactly like a checking account — use the standard <strong>Reconcile</strong>
+      button in the register. The holdings-level reconciliation described below applies only to
+      the investment positions, not to the cash balance.
+    </p>
+
+    <h3>Investment Accounts — Reconcile Holdings with Statement</h3>
+    <p>
+      Investment accounts don't use the checkbook-style Reconcile page above — instead, a
+      separate holdings-level reconciliation compares each security's share count (and
+      optionally price) against a brokerage statement. From the account's
+      <strong>Holdings</strong> page, click <strong>Reconcile with Statement</strong>.
+    </p>
+    <ol class="steps">
+      <li>Upload a CSV exported from your brokerage.</li>
+      <li>Review the comparison report — discrepancies in share count, average cost, and price are flagged.</li>
+      <li>Optionally check <strong>Update prices from statement</strong> and select a date to record the statement prices.</li>
+      <li>Click <strong>Apply Adjustments</strong> to post correcting add/remove transactions and update prices.</li>
+    </ol>
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      Supported brokerage formats include Fidelity, Merrill Edge, Schwab, and any CSV with
+      standard Symbol / Description / Quantity / Price columns.
+    </div>
+    <p>
+      A clean reconciliation is a real check on your data — a genuine duplicate buy or sell
+      would inflate or deflate the computed share count and get caught (and corrected) here,
+      the same way a bank reconciliation would surface a duplicate deposit. Because of that,
+      applying a reconciliation marks the account's investment transactions dated on or before
+      the statement date as <code>c</code> (Cleared) unless they're already <code>R</code>
+      (Reconciled). This is why investment accounts can show <code>c</code> transactions that
+      were never checked off in a Reconcile page — for investment accounts, holdings
+      reconciliation <em>is</em> that check-off process.
+    </p>
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      Cleared or reconciled transactions in a true investment account are excluded from the
+      <strong>Duplicate Transactions</strong> integrity check (see
+      <a href="#maintenance">Integrity / Maintenance Checks</a>), since a successful holdings
+      reconciliation already confirms they're real. This exclusion is scoped to investment
+      accounts only — imported bank/credit-card transactions are marked <code>c</code>
+      automatically with no verification, so they still need to be checked for duplicates even
+      after being cleared.
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="categories"></span>
+    <h2><i class="bi bi-tags"></i> Categories</h2>
+
+    <p>
+      Categories organize your transactions for reporting and budgeting. Go to
+      <strong>Categories</strong> in the nav to manage them.
+    </p>
+
+    <ul>
+      <li>Categories have a <strong>type</strong>: <em>Income</em>, <em>Expense</em>, or <em>Transfer</em>.</li>
+      <li>Categories can be <strong>nested</strong>: create a parent category (e.g. <em>Food</em>) and subcategories beneath it (e.g. <em>Groceries</em>, <em>Restaurants</em>).</li>
+      <li>Deactivated categories are hidden from entry forms but preserved in historical transactions.</li>
+      <li>A default <strong>Banking Income</strong> category (with <em>Bank Interests</em> and <em>Cash Rewards</em> subcategories) is created automatically, for interest and rewards from checking, savings, and CDs. Securities income (dividends, capital gains, interest on a holding) is <em>not</em> category-driven — see <a href="#transactions">Investment Activity Types</a>.</li>
+      <li>Check <strong>Tax-related</strong> on a category to include it in the <a href="#reports">Tax Summary report</a>. This can be set on a parent category (covers all its subcategories at once) or on an individual subcategory.</li>
+    </ul>
+
+    <div class="tip"><i class="bi bi-lightbulb-fill"></i>
+      Keep your category list manageable. Too many fine-grained categories make reporting
+      harder to read. Aim for 20–40 categories covering your actual spending patterns.
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="payees"></span>
+    <h2><i class="bi bi-person-lines-fill"></i> Payees</h2>
+
+    <p>
+      The <strong>Payees</strong> section stores a directory of merchants, billers, and people
+      you transact with. Payees are optional but enable useful features:
+    </p>
+    <ul>
+      <li><strong>Default category</strong> — assign a default category to a payee so it pre-fills when you enter a transaction with that payee name.</li>
+      <li><strong>Contact info</strong> — store address, phone number, and website for reference.</li>
+      <li><strong>Account number</strong> — store your account number with a biller.</li>
+    </ul>
+    <p>
+      Payees are created automatically from transaction imports. You can also add them manually
+      or merge duplicates.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="bills"></span>
+    <h2><i class="bi bi-calendar-check"></i> Bills &amp; Scheduled Items</h2>
+
+    <p>
+      The <strong>Bills</strong> section tracks recurring transactions — monthly bills,
+      subscriptions, paycheck deposits, and scheduled transfers. Go to <strong>Bills</strong>
+      in the nav.
+    </p>
+
+    <h3>Adding a Scheduled Item</h3>
+    <ol class="steps">
+      <li>Click <strong>New Bill / Deposit</strong>.</li>
+      <li>Choose the type: <em>Bill</em> (money out), <em>Deposit</em> (money in), or <em>Transfer</em> (between accounts).</li>
+      <li>Select the account, category, amount, frequency, and next due date.</li>
+      <li>If the amount varies (e.g. a utility bill), check <strong>Estimated</strong> beneath the amount field. Estimated items show a <strong>~est</strong> badge in the bills list and dashboard widget as a reminder that the actual charge may differ.</li>
+      <li>Click <strong>Save</strong>.</li>
+    </ol>
+
+    <h3>Frequencies</h3>
+    <p>Supported schedules: <strong>Once, Weekly, Bi-weekly, Twice a Month (15th &amp; last), Monthly, Bimonthly (every 2 months), Quarterly, Yearly</strong>.</p>
+
+    <h3>Posting a Payment</h3>
+    <p>
+      When a bill is due, click <strong>Post</strong> on the Bills summary page. A dialog appears
+      pre-filled with the scheduled amount and due date — adjust either value if the actual charge
+      differs before confirming. A transaction is created in the linked account and the next due
+      date advances automatically.
+    </p>
+
+    <h3>Auto-Detection When Entering Transactions</h3>
+    <p>
+      When you manually enter a transaction in the account register, Steward checks whether
+      the payee matches a scheduled bill in that account with a due date within the past 14 days
+      or the next 30 days. If a match is found, a confirmation dialog appears showing the bill
+      name, account, scheduled amount, and next due date. Choose <strong>Yes, mark as paid</strong>
+      to record the transaction and automatically advance the bill's next due date, or
+      <strong>No, keep scheduled</strong> to save the transaction without affecting the schedule.
+    </p>
+
+    <div class="tip"><i class="bi bi-lightbulb-fill"></i>
+      The <strong>Upcoming Bills</strong> dashboard widget shows everything due in the next
+      30 days so you never miss a payment.
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="budget"></span>
+    <h2><i class="bi bi-bar-chart-line"></i> Budgets</h2>
+
+    <p>
+      Budgets let you set monthly spending targets by category and track actual spending
+      against them. Navigate to <strong>Budget</strong> in the top nav.
+    </p>
+
+    <h3>Auto-Generate a Budget</h3>
+    <p>
+      Click <strong>Auto-Generate</strong> on the Budgets page to let Steward build a budget
+      from your actual transaction history. A dialog asks which period to use as the baseline:
+    </p>
+    <ul>
+      <li><strong>Previous Month</strong> — last complete calendar month's actuals.</li>
+      <li><strong>3-Month Average</strong> — average of the last 3 complete months.</li>
+      <li><strong>6-Month Average</strong> — average of the last 6 complete months.</li>
+      <li><strong>12-Month Average</strong> — average of the last 12 complete months.</li>
+    </ul>
+    <p>
+      Click <strong>Generate Budget</strong>. Steward computes the average monthly
+      spend per category, creates a new budget named "Auto Budget", attaches all active accounts,
+      and opens the budget editor pre-filled with the computed amounts. Rename the budget and
+      adjust any line items before saving.
+    </p>
+
+    <h3>Creating a Budget Manually</h3>
+    <ol class="steps">
+      <li>Click <strong>New Budget</strong> and give it a name (e.g. <em>Household 2025</em>).</li>
+      <li>Check <strong>Use this budget for the dashboard widget</strong> if you want this budget's categories to appear on the dashboard's Budget tile. Only one budget can feed the dashboard at a time — turning this on for a budget automatically turns it off for every other budget.</li>
+      <li>Optionally link specific accounts — only transactions in those accounts count toward this budget. Use the <strong>Select all</strong> link in each account-type group to quickly check or uncheck all accounts of that type.</li>
+      <li>Add budget lines: pick a category and enter the monthly or annual target amount. The equivalent amount in the other period is shown as a hint.</li>
+      <li>For variable categories (irregular spending), choose <em>Variable</em> entry type and enter a per-month amount for each month.</li>
+      <li>Check <i class="bi bi-speedometer2"></i> <strong>Dashboard</strong> on any category line to include it on the dashboard widget (only takes effect if this budget's own dashboard toggle above is on). Turning that toggle on defaults every category currently in the budget to shown-on-dashboard; you can uncheck individual ones afterward.</li>
+    </ol>
+
+    <h3>Managing Budgets</h3>
+    <p>
+      Each budget on the Budgets page has <strong>View</strong>, <strong>Edit</strong>,
+      <strong>Copy</strong>, and (administrators only) <strong>Delete</strong> actions.
+      <strong>Copy</strong> duplicates the budget's accounts, categories, amounts, and
+      per-category dashboard selections into a new budget named "&lt;name&gt; (Copy)" and opens
+      it in the editor — a quick way to start next year's budget from this year's. The copy
+      always starts with its own dashboard toggle off, even if the original had it on, so
+      copying never changes what the dashboard currently shows by itself.
+    </p>
+    <p>
+      If you then edit the copy and turn <strong>its</strong> dashboard toggle on — for example,
+      to promote a freshly-adjusted copy into the budget the dashboard should now follow — it
+      becomes the new active dashboard budget and the previous one is automatically turned off
+      for you. This is the normal, expected way to hand the dashboard off from one budget to
+      another; no warning appears for it.
+    </p>
+    <p>
+      A budget can still end up flagged outside this normal edit flow — for example, restoring an
+      older database backup — since that bypasses the save process that enforces the
+      single-budget rule. If more than one budget is ever left marked to feed the dashboard
+      widget, the Budgets page shows a warning banner naming which budget actually wins — the
+      oldest one, matching the same tie-break the dashboard widget itself uses — so you can turn
+      the toggle off on the others.
+    </p>
+
+    <h3>Viewing Progress</h3>
+    <p>
+      Open a budget to see each category's progress toward its target, with two bars per row:
+    </p>
+    <ul>
+      <li><strong>This Month</strong> — actual spending/income so far this month vs. the monthly target.</li>
+      <li><strong>This Year</strong> — year-to-date actual vs. the full annual budget (all 12 months summed), with a dark <strong>pace marker</strong> showing how far through the year we are. Compare the filled bar to the marker to see if you're on pace: filled portion past the marker means spending is ahead of pace (or, for income, earning is behind pace).</li>
+    </ul>
+    <p>
+      Each row also shows a pace status (<span style="color:var(--green)">On Track</span>,
+      Slightly Over/Behind, or <span style="color:#dc3545">Over/Behind Pace</span>) and an
+      <strong>Annual Remaining</strong> column — how much budget is left to spend (expenses) or
+      how much more is needed to reach the target (income) for the rest of the year.
+    </p>
+    <p>
+      The <strong>Budget vs. Actual</strong> report (under Reports) shows a simpler month-by-month
+      comparison across any date range.
+    </p>
+    <p>
+      Click <strong>CSV</strong> in the filter bar to export the current budget/month view —
+      Income and Expense categories with this-month and annual budget, actual, % used, pace
+      status, and remaining figures.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="goals"></span>
+    <h2><i class="bi bi-piggy-bank"></i> Savings Goals</h2>
+
+    <p>
+      Savings Goals track progress toward a specific financial target — a vacation fund,
+      emergency fund, down payment, etc. Go to <strong>Goals</strong> in the nav.
+    </p>
+    <ul>
+      <li>Set a <strong>target amount</strong> and optional <strong>target date</strong>.</li>
+      <li>Link a goal to an account to automatically track the balance as progress.</li>
+      <li>Or manually update <strong>Current Amount</strong> as you save.</li>
+      <li>The <strong>Goals</strong> dashboard widget shows progress bars for all active goals.</li>
+    </ul>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="forecast"></span>
+    <h2><i class="bi bi-graph-up"></i> Forecast</h2>
+
+    <p>
+      The <strong>Forecast</strong> page projects your account balance forward in time based on
+      your scheduled bills and deposits. Select an account and a look-ahead period to see a
+      day-by-day projection of what your balance will be.
+    </p>
+    <p>
+      The forecast uses your <em>Bills</em> schedule as the source of future cash flows. Keep
+      your Bills list current for accurate projections.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="portfolio"></span>
+    <h2><i class="bi bi-briefcase"></i> Portfolio</h2>
+
+    <p>
+      The <strong>Portfolio</strong> page provides a consolidated view of all your investment
+      holdings across every investment account, with market values, cost basis, and gain/loss.
+    </p>
+
+    <ul>
+      <li>Each security is listed with symbol, type, current price, total shares, market value, cost basis, and gain/loss.</li>
+      <li>Click any security name to open its <strong>Security Page</strong> — a dedicated page showing a price history chart, cost basis and average cost per share, and a complete transaction history across <em>all</em> accounts. Use the <strong>Export CSV</strong> button on the Security Page to download the full transaction history (Date, Account, Activity, Shares, Price/Share, Commission, Total, Cleared, Memo).</li>
+      <li>Click <strong>Fetch Prices</strong> to retrieve current quotes from a financial data source for all securities that have a valid ticker symbol.</li>
+      <li>Use <strong>Merge Securities</strong> to combine duplicate security records (e.g. the same ETF imported under slightly different names).</li>
+    </ul>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="watchlist"></span>
+    <h2><i class="bi bi-bookmark-star"></i> Watchlist</h2>
+
+    <p>
+      The <strong>Watchlist</strong> lets you track securities you're interested in without
+      holding them in a brokerage account. Navigate to <strong>Watchlist</strong> in the top nav.
+    </p>
+    <ul>
+      <li>Securities are grouped by type (Equities, ETFs, Mutual Funds, etc.), matching the Portfolio layout.</li>
+      <li>Each row shows the security name, symbol, CUSIP, current price with day change and percentage, country, and memo.</li>
+      <li>Click any price to open the <strong>Price History</strong> panel — enter manual quotes or fetch the current price.</li>
+      <li>Click <strong>Fetch Prices</strong> to retrieve current quotes for all watchlisted securities with a valid ticker.</li>
+      <li>To add a security to the Watchlist, open it via <strong>Portfolio</strong> or the investment transaction form and check <strong>Add to Watchlist</strong>.</li>
+      <li>To remove a security, click the <i class="bi bi-bookmark-x"></i> button on its row. The security record is kept; only the watchlist flag is cleared.</li>
+    </ul>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="holdings"></span>
+    <h2><i class="bi bi-pie-chart"></i> Investment Account Holdings</h2>
+
+    <p>
+      Each investment account has a dedicated <strong>Holdings</strong> page (click the
+      <i class="bi bi-pie-chart"></i> icon in the account register header). It shows:
+    </p>
+    <ul>
+      <li>Securities are grouped by type: <strong>Securities</strong> (stocks, ETFs, bonds, mutual funds) and <strong>Money Market</strong>. Each group has its own header row and subtotals, and columns within each group can be sorted independently by clicking a column header.</li>
+      <li>Per-security share count, last price, market value, cost basis, and gain/loss.</li>
+      <li>A totals row for the entire account.</li>
+      <li><strong>Export CSV</strong> — downloads the current holdings table as a CSV file (Name, Symbol, Type, Shares, Last Price, Market Value, Cost Basis, Gain/Loss, Gain/Loss %).</li>
+      <li><strong>Adjust Holdings</strong> — manually add or remove shares (posts an adjustment transaction with no dollar value).</li>
+      <li><strong>Reconcile with Statement</strong> — compare holdings against a brokerage CSV export (see <a href="#reconcile">Reconciliation</a>).</li>
+    </ul>
+
+    <h3>Transaction History</h3>
+    <p>
+      Click a <strong>security name</strong> to open a Transaction History panel showing every
+      buy, sell, reinvestment, split, and adjustment recorded for that security in the current
+      account. The panel includes date, activity type, share count, price per share, commission,
+      and total cost, with a net summary row at the bottom. Two action buttons appear in the
+      panel footer:
+    </p>
+    <ul>
+      <li><strong>View Register</strong> — jump to the full account register filtered to this security.</li>
+      <li><strong>Security Page</strong> — open the security's detail page showing its price history chart and cross-account transaction history. Useful for seeing all purchases of a security across multiple brokerage accounts.</li>
+    </ul>
+    <p>
+      To view price history or edit prices for a security, click the <strong>last quote</strong>
+      (the price value in the Last Quote column) rather than the security name.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="prices"></span>
+    <h2><i class="bi bi-currency-dollar"></i> Security Prices</h2>
+
+    <p>
+      Accurate pricing is required for market values and gain/loss calculations. Prices are
+      stored as a dated series (one close price per security per date).
+    </p>
+
+    <h3>Entering Prices Manually</h3>
+    <p>
+      Click any price in the Portfolio, Watchlist, or Holdings table to open the
+      <strong>Price History</strong> panel for that security. Add or edit individual date/price
+      pairs, or upload a CSV of historical prices. To remove all recorded prices for a security,
+      click the <i class="bi bi-trash"></i> <strong>Clear History</strong> button in the panel footer.
+    </p>
+
+    <h3>Fetching Prices Automatically</h3>
+    <p>
+      Go to <strong>Portfolio → Fetch Prices</strong>. Steward retrieves today's closing
+      price for every active security with a recognized ticker symbol. Securities with
+      <em>Disable Quotes</em> checked are skipped.
+    </p>
+
+    <h3>Scheduled Daily Price Refresh</h3>
+    <p>
+      Under <strong>Gear → Preferences → General</strong>, enable <strong>Automatically refresh
+      prices each weekday</strong> to have Steward fetch closing prices automatically on
+      a schedule. Choose a fetch time between 4:15 PM and 6:00 PM Eastern — prices are
+      retrieved Monday through Friday at the selected time. The last fetch timestamp is shown
+      on the Preferences page. Disable the toggle at any time to cancel the schedule.
+    </p>
+
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      Prices for index symbols (^GSPC, ^DJI, etc.) are informational only and not used in
+      portfolio value calculations unless you hold them as investments.
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="reports"></span>
+    <h2><i class="bi bi-file-earmark-bar-graph"></i> Reports</h2>
+
+    <p>
+      The <strong>Reports</strong> section contains pre-built reports and a custom report builder.
+      Access it from the top nav.
+    </p>
+
+    <h3>Investment Reports</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Report</th><th>Description</th></tr>
+      <tr><td>Portfolio Performance</td><td>Unrealized gains, cost basis, and return % for all current holdings.</td></tr>
+      <tr><td>Asset Allocation</td><td>Portfolio breakdown by asset type and account with donut charts.</td></tr>
+      <tr><td>Portfolio Snapshot</td><td>Top holdings by market value as a donut chart.</td></tr>
+      <tr><td>Capital Gains</td><td>Realized gains and losses from sold securities using the average cost method.</td></tr>
+      <tr><td>Portfolio Value History</td><td>Portfolio value vs. amount invested over time.</td></tr>
+      <tr><td>Investment Performance</td><td>Normalized % return chart comparing selected securities and indexes over a chosen date range, with quick date presets and a summary table.</td></tr>
+      <tr><td>Stock Exposure</td><td>True effective exposure per stock — combines the market value of direct stock holdings with each stock's weighted share of any ETF or mutual fund positions. Ranks all identified securities by effective dollar exposure. See limitations below.</td></tr>
+      <tr><td>Sector Exposure</td><td>GICS sector breakdown of effective stock exposure — the same combined direct + fund-weighted exposure as Stock Exposure, grouped by sector (Information Technology, Financials, Energy, etc.) with a donut chart and per-sector security drill-down. See limitations below.</td></tr>
+      <tr><td>Investment Income</td><td>Dividends, interest, and capital gain distributions for a date range, read directly from investment activity — no category needed. Captures cash income recorded as <em>Dividend (Cash)</em> or <em>Interest (Cash)</em> activity, and amounts automatically reinvested into more shares (<em>Reinvest Dividend</em> / <em>Reinvest Cap Gain</em>). Shows totals by type, a monthly stacked chart, and a by-security breakdown. Supports CSV export. See <a href="#reports">Banking Income</a> for interest earned on cash accounts that isn't tied to a security.</td></tr>
+    </table>
+
+    <h4>Stock Exposure &amp; Sector Exposure — Limitations</h4>
+    <p>Both reports depend on knowing the constituent holdings of each ETF and mutual fund you hold. Coverage is subject to the following constraints:</p>
+    <ul>
+      <li><strong>Vanguard funds only (automatic).</strong> Holdings for Vanguard ETFs and mutual funds (VTI, VOO, VFIAX, VTSAX, VGT, etc.) are fetched automatically from Vanguard's public API at no cost and cached for 7 days. Coverage is typically 89–100% of each fund's weight.</li>
+      <li><strong>Non-Vanguard ETFs require an AlphaVantage API key.</strong> ETFs from other providers (SPY, QQQ, IVV, etc.) are looked up via the AlphaVantage ETF_PROFILE endpoint. The free tier allows 25 requests per day. Holdings are cached for 7 days so the limit is rarely hit after initial setup. Use the <strong>Refresh</strong> button in the Fund Coverage table to re-fetch stale data.</li>
+      <li><strong>Fidelity mutual funds are not covered.</strong> Fidelity actively-managed funds (FDIVX, FTHRX, FMAGX, etc.) are not available through either data source. Their holdings are shown as 0% coverage — the full market value of these funds is excluded from both reports' identified totals.</li>
+      <li><strong>Bond, money market, and similar funds show 0% equity coverage.</strong> This is expected — these funds hold bonds or cash instruments, not individual stocks, so no equity constituents exist to display.</li>
+      <li><strong>Internal brokerage codes are excluded.</strong> Non-standard tickers (e.g. internal sweep codes) cannot be resolved to fund constituents and are excluded from coverage.</li>
+      <li><strong>The "% of Portfolio" figures are understated.</strong> Because some funds have no constituent data, the identified exposure is always less than the full portfolio value. The tiles show what percentage of the portfolio has been successfully analyzed.</li>
+    </ul>
+    <p>For Sector Exposure specifically:</p>
+    <ul>
+      <li><strong>Sector classification uses a built-in static map</strong> covering ~600 common US stocks, Canadian and European large-caps, and common ADRs and local-exchange tickers (Samsung, Nestlé, Siemens, etc.). No API call is made on page load — classification is instant for these symbols.</li>
+      <li><strong>Non-equity instruments are automatically routed to appropriate categories</strong> rather than "Unknown": money market funds → <em>Cash &amp; Equivalents</em>; CDs, bonds, and treasuries → <em>Fixed Income</em>; cryptocurrencies → <em>Crypto</em>; broad market ETFs held as constituents of other ETFs (SPY, QQQ, etc.) → <em>Diversified ETF</em>; named fund instruments such as 529 plans → <em>Other Funds</em>.</li>
+      <li><strong>Newly added securities classify automatically</strong> if the symbol is in the built-in map or matches a non-equity pattern. For other new positions, the sector appears as Unknown on first load and can be resolved with the <strong>Classify More</strong> button.</li>
+      <li><strong>Smaller-cap and foreign stocks outside the built-in map show as "Unknown" sector.</strong> Use the <strong>Classify More</strong> button to fetch up to 20 symbols at a time from AlphaVantage OVERVIEW (subject to the 25 req/day free-tier limit).</li>
+      <li><strong>Sector data is cached for 90 days.</strong> GICS sector assignments rarely change, so the long cache is intentional.</li>
+    </ul>
+
+    <h3>Net Worth &amp; Banking Reports</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Report</th><th>Description</th></tr>
+      <tr><td>Account Balances</td><td>All account balances grouped by type.</td></tr>
+      <tr><td>Net Worth Over Time</td><td>Month-by-month net worth chart — assets minus liabilities.</td></tr>
+      <tr><td>Account Balances History</td><td>Historical balance trends for selected accounts. Supports filtering by account type, and a chart-type toggle between Line and Stacked Bar.</td></tr>
+    </table>
+
+    <h3>Debt Reports</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Report</th><th>Description</th></tr>
+      <tr><td>Credit Card Debt</td><td>Outstanding balances on all credit card accounts with a monthly trend chart.</td></tr>
+      <tr><td>Loan Amortization</td><td>Full payment schedule for any loan account — monthly principal vs. interest breakdown, cumulative interest chart, payoff date, and matched payment history. Requires loan details to be configured on the account.</td></tr>
+    </table>
+
+    <h3>Tax Reports</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Report</th><th>Description</th></tr>
+      <tr><td>Tax Summary</td><td>Income and deductible expenses for a selected tax year, totaled by category. Only includes categories marked <strong>Tax-related</strong> in Categories — see below.</td></tr>
+    </table>
+    <div class="tip"><i class="bi bi-lightbulb-fill"></i>
+      Tax Summary starts empty until you flag categories. Open a category in <strong>Categories</strong>,
+      check <strong>Tax-related</strong>, and save — common candidates are tax payments, mortgage
+      interest, property tax, charitable donations, and tax refunds.
+    </div>
+
+    <h3>Goals &amp; Planning Reports</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Report</th><th>Description</th></tr>
+      <tr><td>Savings Goals</td><td>Progress toward each active savings goal — progress bars, on-track status, days remaining, and monthly contribution needed to hit the target date. For goals linked to an account, the current balance is pulled live.</td></tr>
+      <tr><td>Cash Flow Forecast</td><td>Projects selected account balances forward 30–365 days using your scheduled bills, deposits, and transfers. Highlights dates when an account would go negative. Includes a per-account balance trend chart.</td></tr>
+    </table>
+
+    <h3>Spending &amp; Cash Flow Reports</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Report</th><th>Description</th></tr>
+      <tr><td>Income vs. Expense</td><td>Monthly income and expense totals side by side with net cash flow. Supports separate Income Category and Expense Category filters (handy for excluding catch-all categories like "Special" from the totals), in addition to the account filter. Click any Income or Expense amount — including the Total row — to open a modal listing the underlying transactions for that period; columns are sortable by date, account, payee, category, or amount, and each row links to the transaction in its account register.</td></tr>
+      <tr><td>Income Analysis</td><td>Income broken down by category and month — stacked bar chart, subcategory pivot table, monthly averages, and top payees by income. Defaults to year-to-date; supports CSV export.</td></tr>
+      <tr><td>Banking Income</td><td>Interest and cash rewards from checking, savings, and CDs, driven by the <strong>Banking Income</strong> category. Shows totals by type (Bank Interest / Cash Rewards), a monthly stacked chart, a by-account breakdown, and a by-payee breakdown. Supports CSV export. Complements the <a href="#reports">Investment Income report</a>, which covers dividends and interest earned on securities instead.</td></tr>
+      <tr><td>Spending by Category</td><td>Spending breakdown by category for a date range. Quick-select presets: This Month, Last Month, Last 90 Days, This Year, Last Year.</td></tr>
+      <tr><td>Spending History</td><td>Category spending over time — pivot table by month, quarter, or year with a stacked bar chart.</td></tr>
+      <tr><td>Spending Trends</td><td>Category × month heatmap. Each cell is colored by spending intensity relative to that category's peak month, making seasonal patterns and spending spikes immediately visible.</td></tr>
+      <tr><td>Cash Flow</td><td>Net cash flow by month.</td></tr>
+      <tr><td>Budget vs. Actual</td><td>Budgeted amounts compared to actual spending by category.</td></tr>
+      <tr><td>Payee Summary</td><td>Total spending per payee for a date range.</td></tr>
+      <tr><td>Account Flow</td><td>Revenue, expenses, and transfers for a single account.</td></tr>
+    </table>
+
+    <h3>Account Reports</h3>
+    <table class="feature-table">
+      <tr><th style="width:220px">Report</th><th>Description</th></tr>
+      <tr><td>Reconciliation Status</td><td>Reconciliation health for all accounts — last reconciled date, days since last reconciliation, uncleared transaction count and net amount, and a status badge (Current / Due Soon / Overdue / Never). Overdue and never-reconciled accounts sort to the top.</td></tr>
+    </table>
+
+    <h3>Custom Report</h3>
+    <p>
+      The <strong>Custom Report</strong> builder lets you construct any tabular report:
+    </p>
+    <ul>
+      <li>Choose <em>row</em> and <em>column</em> dimensions (e.g. Category by Month).</li>
+      <li>Choose a metric (sum of amounts, count, average).</li>
+      <li>Apply filters: date range, account, category type, and more. Use the <strong>account-type quick-filter buttons</strong> above the account list to select or deselect all accounts of a given type at once.</li>
+      <li>Add a chart (bar, line, pie, area).</li>
+      <li>Export to <strong>CSV</strong> or <strong>XLSX</strong>.</li>
+      <li>Save the configuration as a <strong>Favorite</strong> for one-click access from the dashboard.</li>
+    </ul>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="search"></span>
+    <h2><i class="bi bi-search"></i> Transaction Search</h2>
+
+    <p>
+      Click <strong>Search</strong> in the top nav to search across all accounts simultaneously.
+    </p>
+    <ul>
+      <li>Search by <strong>payee</strong>, <strong>memo</strong>, <strong>amount</strong>, <strong>category</strong>, or any combination.</li>
+      <li>Filter by <strong>account</strong>, <strong>date range</strong>, <strong>transaction type</strong>, and <strong>cleared status</strong>.</li>
+      <li>Results show the transaction number, account, date, payee, category, and amount. Click any row — or just the transaction number — to jump straight to that exact entry in its register, highlighted and ready to edit.</li>
+    </ul>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="import"></span>
+    <h2><i class="bi bi-upload"></i> Importing Data</h2>
+
+    <p>
+      Import transactions from files exported by your bank or financial software. Go to
+      <strong>Gear → Import Transactions</strong>.
+    </p>
+
+    <h3>Supported Formats</h3>
+    <table class="feature-table">
+      <tr><th style="width:120px">Format</th><th>Notes</th></tr>
+      <tr><td>QIF</td><td>Quicken Interchange Format. Exported from Quicken, Microsoft Money, and most personal finance apps. Supports banking and investment transactions. Multi-account QIF files are handled automatically.</td></tr>
+      <tr><td>OFX / QFX</td><td>Open Financial Exchange. Downloaded directly from banks and brokerages. Best format — includes transaction IDs for accurate duplicate detection.</td></tr>
+      <tr><td>CSV</td><td>Comma-separated values from banks and spreadsheets. Requires column mapping after upload.</td></tr>
+      <tr><td>Steward CSV</td><td>Steward's own export format. Skips column mapping and goes straight to preview. Use the <em>Fast Import</em> path.</td></tr>
+    </table>
+
+    <h3>Importing into an Existing Account</h3>
+    <ol class="steps">
+      <li>Go to <strong>Gear → Import Transactions</strong> and select <strong>Existing Account</strong>.</li>
+      <li>Choose the account from the dropdown.</li>
+      <li>For Investment accounts, select whether this is a <em>Transaction History</em> or <em>Positions / Holdings</em> file.</li>
+      <li>Select your file and click <strong>Upload &amp; Preview</strong>.</li>
+      <li>For CSV files, map your columns to Steward fields and click <strong>Continue</strong>.</li>
+      <li>Review the preview, resolve any flagged duplicates or unmapped payees/categories, and click <strong>Import</strong>.</li>
+    </ol>
+
+    <h3>Creating a New Account During Import</h3>
+    <p>
+      Select <strong>Create New Account</strong> on the Import page. The account is created
+      and populated with transactions in a single step.
+    </p>
+    <p>
+      Alternatively, when creating an account manually via <strong>Accounts → New Account</strong>,
+      choose <strong>Import from File</strong> — this redirects to the same Import page with
+      "Create New Account" pre-selected.
+    </p>
+
+    <h3>Fast Import (Steward CSV)</h3>
+    <p>
+      If you have a file in Steward CSV format (e.g. produced by the Statement Converter),
+      use <strong>Fast Import</strong> from the Import page. Account matching is automatic when
+      the <code>account</code> column matches a known account name. No column mapping step
+      is needed.
+    </p>
+
+    <h3>Duplicate Detection</h3>
+    <p>
+      OFX/QFX imports use transaction IDs (<code>FITID</code>) for exact duplicate detection.
+      QIF and CSV imports match on date + amount + payee and flag probable duplicates for review
+      before committing.
+    </p>
+
+    <h3>Dividend Reinvestment (DRIP) Handling</h3>
+    <p>
+      Some institutions report a dividend reinvestment as two separate lines — a
+      <em>Dividend</em> line and a <em>Reinvestment Share(s)</em> line — instead of one combined
+      entry. Steward automatically merges an unambiguous 1-to-1 pair (same account, security,
+      and date) into the single <em>Reinvest Dividend</em>/<em>Reinvest Cap Gain</em> record it
+      uses everywhere else: the dividend amount is folded in as the reinvestment's price (so cost
+      basis is correct) and the separate dividend line is dropped, so income isn't counted twice.
+      Merged lines are listed in the import report with the reason
+      <strong>"Merged into reinvestment (DRIP)"</strong>.
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="converter"></span>
+    <h2><i class="bi bi-arrow-left-right"></i> Statement Converter</h2>
+
+    <p>
+      The <strong>Statement Converter</strong> (<code>/steward/converter/</code>) converts
+      brokerage-specific CSV exports into the Steward CSV format, which can then be
+      imported using Fast Import.
+    </p>
+
+    <h3>Supported Brokerages</h3>
+    <ul>
+      <li>Fidelity — transaction history and holdings/positions</li>
+      <li>Merrill Edge — transaction history and holdings/positions</li>
+    </ul>
+
+    <h3>How to Use</h3>
+    <ol class="steps">
+      <li>Export a CSV from your brokerage (transaction history or positions).</li>
+      <li>Open the Statement Converter at <code>/steward/converter/</code>.</li>
+      <li>Upload the file. The converter auto-detects the broker and statement type.</li>
+      <li>Review the parsed transactions in the preview table.</li>
+      <li>Click <strong>Download Steward CSV</strong> to download the converted file, or <strong>Send to Steward</strong> to hand it directly to Fast Import.</li>
+    </ol>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="settings"></span>
+    <h2><i class="bi bi-gear"></i> Settings</h2>
+
+    <p>
+      Application-wide settings are under <strong>Gear → Settings</strong>
+      (administrator only). Key options include:
+    </p>
+
+    <table class="feature-table">
+      <tr><th style="width:240px">Setting</th><th>Description</th></tr>
+      <tr><td>Instance Name</td><td>The name shown in the navigation bar below "Steward".</td></tr>
+      <tr><td>Enforce HTTPS</td><td>Redirect all HTTP requests to HTTPS. Enable once an SSL certificate is installed.</td></tr>
+      <tr><td>Currency Symbol</td><td>Symbol prepended to all monetary amounts (e.g. $, €, £). Set under <strong>Preferences → General</strong>.</td></tr>
+      <tr><td>Date Format</td><td>How dates are displayed (MM/DD/YYYY, DD/MM/YYYY, etc.).</td></tr>
+      <tr><td>Login Background</td><td>Upload a custom image for the login page.</td></tr>
+      <tr><td>Hide Loans / Goals</td><td>Remove the Loans or Goals nav items if you don't use those features.</td></tr>
+      <tr><td>Users Can Delete Transactions</td><td>Allow non-admin users to delete transactions.</td></tr>
+    </table>
+
+    <h3>Preferences</h3>
+    <p>
+      Application-wide display preferences are under <strong>Gear → Preferences</strong>
+      (administrator only). Options include:
+    </p>
+    <ul>
+      <li><strong>Currency Symbol</strong> — symbol prepended to all monetary amounts (e.g. $, €, £). Applies globally; per-account currency selection is reserved for future multi-currency support.</li>
+      <li><strong>Sidebar Account Balance</strong> — show ending balance or current (today's) balance in the sidebar.</li>
+      <li><strong>Negative Number Format</strong> — choose color-only, minus sign, or accounting parentheses.</li>
+      <li><strong>Transaction Form Position</strong> — when enabled, the new transaction entry form appears <em>above</em> the transaction list in the account register instead of below it.</li>
+    </ul>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="users"></span>
+    <h2><i class="bi bi-people"></i> Users</h2>
+
+    <p>
+      Manage user accounts under <strong>Gear → Users</strong> (administrator only).
+    </p>
+    <ul>
+      <li><strong>Add User</strong> — enter username, full name, email, role, and initial password.</li>
+      <li><strong>Edit</strong> — change any user's details or reset their password.</li>
+      <li><strong>Deactivate</strong> — prevents a user from logging in without deleting their record.</li>
+    </ul>
+
+    <div class="warn"><i class="bi bi-exclamation-triangle-fill"></i>
+      Always change the default <code>admin / Admin123!</code> password immediately after
+      installation. There is no "forgot password" flow — an administrator must reset
+      passwords manually.
+    </div>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="backup"></span>
+    <h2><i class="bi bi-archive"></i> Backup &amp; Restore</h2>
+
+    <p>
+      Database backups are managed under <strong>Gear → Backup / Restore</strong>
+      (administrator only).
+    </p>
+
+    <h3>Creating a Backup</h3>
+    <p>
+      Click <strong>Download Backup</strong> to download a complete SQL dump of your database.
+      Store backups in a safe location outside the server. Schedule regular backups —
+      Steward does not create backups automatically.
+    </p>
+
+    <p>
+      For server-side backups (<strong>Back Up Now</strong> and automated safety backups before
+      table optimization), configure a backup location first in
+      <strong>Gear → Backup / Restore</strong>. If the backup location has not been configured,
+      Steward shows a dedicated warning notification and (for permitted users) a direct link
+      to backup settings.
+    </p>
+
+    <h3>Restoring a Backup</h3>
+    <ol class="steps">
+      <li>Go to <strong>Gear → Backup / Restore → Restore</strong>.</li>
+      <li>Upload a previously downloaded <code>.sql</code> backup file.</li>
+      <li>Confirm the restore. <strong>This will overwrite all current data.</strong></li>
+    </ol>
+
+    <div class="warn"><i class="bi bi-exclamation-triangle-fill"></i>
+      Restoring a backup is irreversible. Download a fresh backup of the current data
+      before restoring an older one.
+    </div>
+
+    <span class="anchor" id="maintenance"></span>
+    <h3>Integrity / Maintenance Checks</h3>
+    <p>
+      <strong>Gear → Integrity / Maintenance</strong> (administrator only) runs a set of data
+      integrity checks — duplicate categories/investments/transactions, uncategorized
+      transactions, split-amount mismatches, unmatched transfers, orphaned investment
+      transactions, and more — each with a <strong>Run</strong> button and, where applicable, a
+      one-click fix. <strong>Duplicate Transactions</strong> flags same account/date/payee/amount
+      groups; reconciled transactions are always excluded, and cleared transactions are also
+      excluded for true investment accounts, since holdings reconciliation verifies those (see
+      <a href="#reconcile">Reconciliation</a>). <strong>Categorized Income in Investment-Cash
+      Accounts</strong> flags cash-sweep deposits whose payee matches a known security but were
+      entered as a plain categorized transaction instead of a Buy/Sell/Dividend/Interest
+      activity, bypassing per-security tracking (crypto-linked cash accounts are excluded, since
+      crypto doesn't use the same activity model). Security-related checks (default passwords,
+      exposed setup directory, debug files, session timeout) live in their own section on the
+      same page.
+    </p>
+
+    <h3>Database Maintenance</h3>
+    <p>
+      <strong>Gear → Settings → Database Maintenance</strong> provides tools to optimize
+      tables and repair any corruption. Run this periodically on large databases.
+      <strong>Optimize Tables</strong> always creates a safety backup first; if backup settings
+      are incomplete, Optimize is aborted and Steward shows a warning with a link to
+      configure backup settings (when your role is allowed).
+    </p>
+
+    <!-- ════════════════════════════════════════════════════ -->
+    <span class="anchor" id="schema"></span>
+    <h2><i class="bi bi-database"></i> Database Schema Reference</h2>
+
+    <p>
+      This appendix documents the underlying MySQL database for advanced users who want to
+      perform bulk edits, write custom queries, or integrate external tools. All user-facing
+      operations are available through the application UI — direct database access is provided
+      as a power-user escape hatch, not a required workflow.
+    </p>
+
+    <div class="warn"><i class="bi bi-exclamation-triangle-fill"></i>
+      <div><strong>Always take a backup before running any <code>UPDATE</code> or <code>DELETE</code> statement.</strong>
+      The application does not validate changes made outside the UI. Modifying rows incorrectly
+      can corrupt balances, break transfer links, or orphan split records. Use
+      <strong>Gear → Backup / Restore</strong> to download a snapshot first.</div>
+    </div>
+
+    <h3>Amount Sign Convention</h3>
+    <p>
+      Throughout the schema, monetary amounts follow a single rule: <strong>positive = money
+      coming in, negative = money going out</strong>. A $50 grocery withdrawal is stored as
+      <code>-50.00</code>; a $1,200 paycheck deposit is stored as <code>1200.00</code>. This
+      applies to <code>transactions.amount</code>, <code>transaction_splits.amount</code>, and
+      <code>investment_transactions</code> values.
+    </p>
+
+    <h3>Table Overview</h3>
+    <table class="feature-table">
+      <tr><th style="width:200px">Table</th><th>Purpose</th></tr>
+      <tr><td><code>accounts</code></td><td>Bank, credit card, investment, loan, and asset accounts.</td></tr>
+      <tr><td><code>transactions</code></td><td>Every financial transaction. The central table — most bulk operations target this table.</td></tr>
+      <tr><td><code>transaction_splits</code></td><td>Line items for split transactions. Each split row holds one category and its portion of the total.</td></tr>
+      <tr><td><code>transfers</code></td><td>Links the two transaction rows that form a transfer between accounts.</td></tr>
+      <tr><td><code>categories</code></td><td>Two-level category tree (parent → subcategory). Type is <code>income</code>, <code>expense</code>, or <code>transfer</code>.</td></tr>
+      <tr><td><code>payees</code></td><td>Payee directory with optional default category and contact info.</td></tr>
+      <tr><td><code>investments</code></td><td>Securities and market indices (ticker, type, CUSIP).</td></tr>
+      <tr><td><code>investment_transactions</code></td><td>Investment activity detail linked to a parent transaction row. Activity types: <code>buy</code>, <code>sell</code>, <code>add</code>, <code>remove</code>, <code>split</code>, <code>reinvest_div</code>, <code>reinvest_cap</code>, <code>div</code> (dividend/cap-gain to cash), <code>int</code> (interest to cash).</td></tr>
+      <tr><td><code>investment_prices</code></td><td>Historical daily price records per security.</td></tr>
+      <tr><td><code>scheduled_bills</code></td><td>Recurring bill and deposit templates.</td></tr>
+      <tr><td><code>budgets</code> / <code>budget_categories</code></td><td>Budget definitions and per-category targets.</td></tr>
+      <tr><td><code>savings_goals</code></td><td>Savings goal targets and progress.</td></tr>
+      <tr><td><code>loan_details</code></td><td>Amortization parameters for Loan-type accounts.</td></tr>
+      <tr><td><code>paycheck_templates</code></td><td>Saved paycheck entry templates with split lines.</td></tr>
+      <tr><td><code>favorite_reports</code></td><td>Dashboard widgets and saved custom reports.</td></tr>
+      <tr><td><code>settings</code></td><td>Application-wide key/value settings.</td></tr>
+      <tr><td><code>user_prefs</code></td><td>Per-user display preferences.</td></tr>
+      <tr><td><code>activity_log</code></td><td>Audit trail of login and data-change events.</td></tr>
+    </table>
+
+    <!-- ─────────────────────────────── accounts ──────────────── -->
+    <h3>accounts</h3>
+    <table class="feature-table schema-tbl">
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td>id</td><td>INT PK</td><td>Referenced by <code>transactions.account_id</code>.</td></tr>
+      <tr><td>name</td><td>VARCHAR(100)</td><td>Display name shown in the sidebar and dropdowns.</td></tr>
+      <tr><td>type</td><td>ENUM</td><td><code>Checking</code>, <code>Savings</code>, <code>Credit Card</code>, <code>Investment</code>, <code>Asset</code>, <code>Loan</code>, <code>Crypto</code>.</td></tr>
+      <tr><td>opening_balance</td><td>DECIMAL(15,2)</td><td>Starting balance at account creation. Not a transaction; factored into running balance.</td></tr>
+      <tr><td>is_active</td><td>TINYINT(1)</td><td>0 = closed/archived. Closed accounts are hidden from most UI views but their transactions remain.</td></tr>
+      <tr><td>is_closed</td><td>TINYINT(1)</td><td>Explicitly closed via the UI. Prevents new transactions from being entered.</td></tr>
+      <tr><td>exclude_from_net_worth</td><td>TINYINT(1)</td><td>1 = omit this account's balance from the net worth calculation.</td></tr>
+      <tr><td>linked_account_id</td><td>INT FK</td><td>For Investment accounts: points to the companion cash sub-account.</td></tr>
+      <tr><td>is_investment_cash</td><td>TINYINT(1)</td><td>1 = this is an auto-created cash sub-account of an Investment account.</td></tr>
+      <tr><td>is_retirement</td><td>TINYINT(1)</td><td>1 = tax-advantaged retirement account (IRA, 401k, etc.).</td></tr>
+      <tr><td>sort_order</td><td>INT</td><td>Display order within the sidebar. Lower numbers appear first.</td></tr>
+    </table>
+
+    <!-- ─────────────────────────────── transactions ──────────── -->
+    <h3>transactions</h3>
+    <table class="feature-table schema-tbl">
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td>id</td><td>INT PK</td><td>Auto-increment primary key.</td></tr>
+      <tr><td>account_id</td><td>INT FK</td><td>The account this transaction belongs to.</td></tr>
+      <tr><td>transaction_date</td><td>DATE</td><td>Date of the transaction (YYYY-MM-DD).</td></tr>
+      <tr><td>payee</td><td>VARCHAR(200)</td><td>Free-text payee name. Not a foreign key — the <code>payees</code> table is a directory, not enforced.</td></tr>
+      <tr><td>type</td><td>ENUM</td><td><code>withdrawal</code>, <code>deposit</code>, <code>transfer</code>, <code>investment</code>.</td></tr>
+      <tr><td>amount</td><td>DECIMAL(15,2)</td><td>Positive = deposit/credit; negative = withdrawal/debit.</td></tr>
+      <tr><td>cleared_status</td><td>ENUM</td><td><code>''</code> = uncleared, <code>'cleared'</code> = cleared (✓), <code>'reconciled'</code> = reconciled (R). Reconciled rows are locked in the UI.</td></tr>
+      <tr><td>memo</td><td>TEXT</td><td>Optional free-text note.</td></tr>
+      <tr><td>num</td><td>VARCHAR(20)</td><td>Check number or reference number.</td></tr>
+      <tr><td>fitid</td><td>VARCHAR(255)</td><td>Financial institution transaction ID from OFX/QFX imports. Used for duplicate detection.</td></tr>
+      <tr><td>is_split</td><td>TINYINT(1)</td><td>1 = this transaction has rows in <code>transaction_splits</code>. When <code>is_split = 1</code>, the category is stored in the splits table, not on the transaction row itself.</td></tr>
+      <tr><td>transfer_pair_id</td><td>INT FK</td><td>For transfer transactions: the <code>id</code> of the matching transaction in the other account. Also linked via the <code>transfers</code> table.</td></tr>
+    </table>
+
+    <!-- ─────────────────────────────── transaction_splits ─────── -->
+    <h3>transaction_splits</h3>
+    <p>
+      When a transaction is split across multiple categories, one row is written here per
+      line item. The split amounts must sum to the parent transaction's <code>amount</code>.
+      Non-split transactions have no rows in this table.
+    </p>
+    <table class="feature-table schema-tbl">
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td>transaction_id</td><td>INT FK</td><td>Parent transaction. Cascades on delete.</td></tr>
+      <tr><td>category_id</td><td>INT FK → categories</td><td>Top-level category (or the only category if no subcategory).</td></tr>
+      <tr><td>subcategory_id</td><td>INT FK → categories</td><td>Subcategory. NULL if the split uses a top-level category only.</td></tr>
+      <tr><td>amount</td><td>DECIMAL(15,2)</td><td>Portion of the transaction assigned to this category. Same sign convention as the parent.</td></tr>
+      <tr><td>memo</td><td>VARCHAR(255)</td><td>Per-line memo.</td></tr>
+    </table>
+
+    <!-- ─────────────────────────────── transfers ─────────────── -->
+    <h3>transfers</h3>
+    <p>
+      A transfer creates two transaction rows (one debit, one credit) and one row in this
+      table linking them. When editing transfers via SQL, always update <strong>both</strong>
+      transaction rows and keep the <code>transfers</code> row consistent.
+    </p>
+    <table class="feature-table schema-tbl">
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td>from_transaction_id</td><td>INT FK</td><td>The debit leg (amount is negative).</td></tr>
+      <tr><td>to_transaction_id</td><td>INT FK</td><td>The credit leg (amount is positive).</td></tr>
+    </table>
+
+    <!-- ─────────────────────────────── categories ────────────── -->
+    <h3>categories</h3>
+    <table class="feature-table schema-tbl">
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td>id</td><td>INT PK</td><td>Referenced by splits and payees.</td></tr>
+      <tr><td>name</td><td>VARCHAR(100)</td><td>Display name. Top-level categories have <code>parent_id = NULL</code>.</td></tr>
+      <tr><td>parent_id</td><td>INT FK → self</td><td>NULL for top-level categories; points to the parent for subcategories. Only two levels are supported.</td></tr>
+      <tr><td>type</td><td>ENUM</td><td><code>income</code>, <code>expense</code>, or <code>transfer</code>.</td></tr>
+      <tr><td>is_active</td><td>TINYINT(1)</td><td>0 = hidden from category pickers. Existing transactions that reference an inactive category are unaffected.</td></tr>
+    </table>
+
+    <!-- ─────────────────────────────── payees ────────────────── -->
+    <h3>payees</h3>
+    <p>
+      The payees table is a <em>directory</em> — it stores contact info and a default category
+      but is not enforced as a foreign key on transactions. The <code>transactions.payee</code>
+      column is free text. Bulk-renaming a payee therefore requires updating
+      <code>transactions.payee</code> directly.
+    </p>
+    <table class="feature-table schema-tbl">
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td>name</td><td>VARCHAR(200) UNIQUE</td><td>Must be unique. Matches the free-text payee field on transactions.</td></tr>
+      <tr><td>category_id</td><td>INT FK → categories</td><td>Default top-level category pre-filled when this payee is selected.</td></tr>
+      <tr><td>subcategory_id</td><td>INT FK → categories</td><td>Default subcategory.</td></tr>
+    </table>
+
+    <!-- ─────────────────────────────── Common SQL ─────────────── -->
+    <h3>Common Bulk Operations</h3>
+
+    <p>These examples use standard MySQL syntax. Run them through a MySQL client or the
+    <strong>Gear → Backup / Restore</strong> SQL interface. Test with a <code>SELECT</code>
+    first, then re-run as an <code>UPDATE</code> or <code>DELETE</code>.</p>
+
+    <p><strong>Find all transactions without a category (non-split)</strong></p>
+<pre><code><span class="sql-kw">SELECT</span> t.id, t.transaction_date, t.payee, t.amount
+<span class="sql-kw">FROM</span>   transactions t
+<span class="sql-kw">LEFT JOIN</span> transaction_splits s <span class="sql-kw">ON</span> s.transaction_id = t.id
+<span class="sql-kw">WHERE</span>  t.is_split = 0
+  <span class="sql-kw">AND</span>  s.id <span class="sql-kw">IS NULL</span>
+  <span class="sql-kw">AND</span>  t.type <span class="sql-kw">NOT IN</span> (<span class="sql-str">'transfer'</span>, <span class="sql-str">'investment'</span>)
+<span class="sql-kw">ORDER BY</span> t.transaction_date <span class="sql-kw">DESC</span>;</code></pre>
+
+    <p><strong>Bulk re-categorize: move all "Dining Out" splits to a different subcategory</strong></p>
+<pre><code><span class="sql-cmt">-- Step 1: find the IDs you need</span>
+<span class="sql-kw">SELECT</span> id, name, parent_id <span class="sql-kw">FROM</span> categories <span class="sql-kw">WHERE</span> name <span class="sql-kw">LIKE</span> <span class="sql-str">'%Dining%'</span>;
+
+<span class="sql-cmt">-- Step 2: update (replace 42 and 7 with your actual IDs)</span>
+<span class="sql-kw">UPDATE</span> transaction_splits
+<span class="sql-kw">SET</span>    subcategory_id = 42   <span class="sql-cmt">-- new subcategory</span>
+<span class="sql-kw">WHERE</span>  subcategory_id = 7;   <span class="sql-cmt">-- old subcategory</span></code></pre>
+
+    <p><strong>Rename a payee across all transactions</strong></p>
+<pre><code><span class="sql-cmt">-- Update the directory entry</span>
+<span class="sql-kw">UPDATE</span> payees
+<span class="sql-kw">SET</span>    name = <span class="sql-str">'Whole Foods Market'</span>
+<span class="sql-kw">WHERE</span>  name = <span class="sql-str">'WFM'</span>;
+
+<span class="sql-cmt">-- Update the free-text field on every transaction</span>
+<span class="sql-kw">UPDATE</span> transactions
+<span class="sql-kw">SET</span>    payee = <span class="sql-str">'Whole Foods Market'</span>
+<span class="sql-kw">WHERE</span>  payee = <span class="sql-str">'WFM'</span>;</code></pre>
+
+    <p><strong>Mark a date range as cleared</strong></p>
+<pre><code><span class="sql-kw">UPDATE</span> transactions
+<span class="sql-kw">SET</span>    cleared_status = <span class="sql-str">'cleared'</span>
+<span class="sql-kw">WHERE</span>  account_id     = 3          <span class="sql-cmt">-- replace with your account id</span>
+  <span class="sql-kw">AND</span>  transaction_date <span class="sql-kw">BETWEEN</span> <span class="sql-str">'2024-01-01'</span> <span class="sql-kw">AND</span> <span class="sql-str">'2024-01-31'</span>
+  <span class="sql-kw">AND</span>  cleared_status = <span class="sql-str">''</span>;        <span class="sql-cmt">-- only touch uncleared rows</span></code></pre>
+
+    <div class="warn"><i class="bi bi-shield-exclamation"></i>
+      Do not change <code>cleared_status</code> to <code>'reconciled'</code> for transactions
+      that were not part of a formal reconciliation. The reconcile feature computes running
+      balances against a cleared ending balance; manually reconciling rows outside that
+      process will cause the reconcile page to show incorrect differences.
+    </div>
+
+    <p><strong>Find duplicate transactions (same date, payee, and amount in one account)</strong></p>
+<pre><code><span class="sql-kw">SELECT</span>   account_id, transaction_date, payee, amount,
+         <span class="sql-fn">COUNT</span>(*) <span class="sql-kw">AS</span> cnt
+<span class="sql-kw">FROM</span>     transactions
+<span class="sql-kw">GROUP BY</span> account_id, transaction_date, payee, amount
+<span class="sql-kw">HAVING</span>   cnt &gt; 1
+<span class="sql-kw">ORDER BY</span> cnt <span class="sql-kw">DESC</span>;</code></pre>
+
+    <p><strong>Summarize spending by top-level category for a year</strong></p>
+<pre><code><span class="sql-kw">SELECT</span>   c.name                        <span class="sql-kw">AS</span> category,
+         <span class="sql-fn">SUM</span>(s.amount) * -1           <span class="sql-kw">AS</span> total_spent
+<span class="sql-kw">FROM</span>     transaction_splits  s
+<span class="sql-kw">JOIN</span>     transactions         t  <span class="sql-kw">ON</span> t.id        = s.transaction_id
+<span class="sql-kw">JOIN</span>     categories           c  <span class="sql-kw">ON</span> c.id        = s.category_id
+<span class="sql-kw">WHERE</span>    t.transaction_date <span class="sql-kw">BETWEEN</span> <span class="sql-str">'2024-01-01'</span> <span class="sql-kw">AND</span> <span class="sql-str">'2024-12-31'</span>
+  <span class="sql-kw">AND</span>    c.parent_id <span class="sql-kw">IS NULL</span>          <span class="sql-cmt">-- top-level only</span>
+  <span class="sql-kw">AND</span>    c.type = <span class="sql-str">'expense'</span>
+<span class="sql-kw">GROUP BY</span> c.id, c.name
+<span class="sql-kw">ORDER BY</span> total_spent <span class="sql-kw">DESC</span>;</code></pre>
+
+    <p><strong>Show current holdings (shares) for one investment account</strong></p>
+<pre><code><span class="sql-kw">SELECT</span>   i.symbol,
+         i.name,
+         <span class="sql-fn">SUM</span>(it.quantity)  <span class="sql-kw">AS</span> shares
+<span class="sql-kw">FROM</span>     investment_transactions it
+<span class="sql-kw">JOIN</span>     transactions             t  <span class="sql-kw">ON</span> t.id  = it.transaction_id
+<span class="sql-kw">JOIN</span>     investments              i  <span class="sql-kw">ON</span> i.id  = it.investment_id
+<span class="sql-kw">WHERE</span>    t.account_id = 5           <span class="sql-cmt">-- replace with your investment account id</span>
+<span class="sql-kw">GROUP BY</span> i.id, i.symbol, i.name
+<span class="sql-kw">HAVING</span>   <span class="sql-fn">SUM</span>(it.quantity) &lt;&gt; 0
+<span class="sql-kw">ORDER BY</span> i.symbol;</code></pre>
+
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      The full DDL (CREATE TABLE statements) is in <code>install/schema.sql</code> inside
+      the application directory. Use that file as the authoritative reference for column
+      types, constraints, and indexes. The <code>sql/migrations/</code> directory contains
+      incremental ALTER statements applied to existing installations.
+    </div>
+
+    <span class="anchor" id="support"></span>
+    <h2><i class="bi bi-life-preserver"></i> Support</h2>
+    <p>
+      Found a bug, or have an idea for an enhancement? Email
+      <a href="mailto:steward@7312.us">steward@7312.us</a> with a description
+      of the issue or request.
+    </p>
+
+    <span class="anchor" id="donate"></span>
+    <h2><i class="bi bi-heart"></i> Donate</h2>
+    <p>
+      If Steward has been useful to you, consider supporting its continued
+      development with a donation via PayPal.
+    </p>
+    <a href="https://www.paypal.com/donate/?hosted_button_id=5NBZHD74FTF5Q" target="_blank" rel="noopener">
+      Donate with PayPal
+    </a>
+
+    <span class="anchor" id="license"></span>
+    <h2><i class="bi bi-file-earmark-text"></i> License</h2>
+    <p>
+      Steward is licensed for personal, non-commercial use only. Commercial
+      use, rebranding, or redistribution as a competing product is not
+      permitted without prior written permission. See <code>license.txt</code>
+      in the application directory for the full terms.
+    </p>
+    <p>
+      For commercial licensing or other inquiries, contact
+      <a href="mailto:steward@7312.us">steward@7312.us</a>.
+    </p>
+
+  </main>
+</div>
+
+<script>
+// Highlight active sidebar link on scroll
+const anchors = document.querySelectorAll('.anchor');
+const links   = document.querySelectorAll('.sidebar a');
+
+function updateActive() {
+  let active = '';
+  anchors.forEach(a => {
+    if (window.scrollY >= a.offsetTop - 80) active = a.id;
+  });
+  links.forEach(l => {
+    const href = l.getAttribute('href').slice(1);
+    l.classList.toggle('active', href === active);
+  });
+}
+
+window.addEventListener('scroll', updateActive, { passive: true });
+updateActive();
+</script>
+</body>
+</html>

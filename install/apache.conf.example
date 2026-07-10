@@ -1,0 +1,61 @@
+# Steward — Apache Configuration Example
+#
+# Option A: Sub-path under an existing virtual host (e.g. https://myserver/steward)
+# Add this Directory block inside your <VirtualHost> section:
+
+<Directory /var/www/html/steward>
+    AllowOverride FileInfo
+    Require all granted
+</Directory>
+
+# The app ships with an .htaccess that uses mod_rewrite for pretty report URLs.
+# Enable the module if it is not already active:
+#   sudo a2enmod rewrite
+#   sudo systemctl reload apache2
+
+# ──────────────────────────────────────────────────────────────
+# Option B: Dedicated virtual host (http, port 80)
+# ──────────────────────────────────────────────────────────────
+
+<VirtualHost *:80>
+    ServerName steward.example.com
+    DocumentRoot /var/www/html/steward
+
+    <Directory /var/www/html/steward>
+        AllowOverride FileInfo
+        Require all granted
+    </Directory>
+
+    ErrorLog  ${APACHE_LOG_DIR}/steward_error.log
+    CustomLog ${APACHE_LOG_DIR}/steward_access.log combined
+</VirtualHost>
+
+# ──────────────────────────────────────────────────────────────
+# Option C: Dedicated virtual host (https, port 443)
+# ──────────────────────────────────────────────────────────────
+
+<VirtualHost *:443>
+    ServerName steward.example.com
+    DocumentRoot /var/www/html/steward
+
+    SSLEngine on
+    SSLCertificateFile    /etc/ssl/certs/your_cert.pem
+    SSLCertificateKeyFile /etc/ssl/private/your_key.pem
+
+    <Directory /var/www/html/steward>
+        AllowOverride FileInfo
+        Require all granted
+    </Directory>
+
+    <IfModule mod_headers.c>
+        Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains"
+    </IfModule>
+
+    ErrorLog  ${APACHE_LOG_DIR}/steward_error.log
+    CustomLog ${APACHE_LOG_DIR}/steward_access.log combined
+</VirtualHost>
+
+# ──────────────────────────────────────────────────────────────
+# PHP session directory (if using a non-default session.save_path)
+# ──────────────────────────────────────────────────────────────
+# php_value session.save_path /var/lib/php/sessions
