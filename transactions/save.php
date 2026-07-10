@@ -144,13 +144,19 @@ if ($type === 'investment') {
 
     $incomeAmount = abs((float)($_POST['inv_income_amount'] ?? 0));
 
+    // Buy/sell cash cost only has somewhere real to go if this account has an
+    // actual linked cash sub-account — the "Transfer From/To Cash" dropdown
+    // always submits *some* account id even when there's no real pairing, so
+    // that POSTed id can't be trusted as a signal here.
+    $hasLinkedCash = !empty($account['linked_account_id']);
+
     // Amount stored in the investment account.
     // add/remove only change share count — no cash, no cost basis amount.
     $invAmount = match($activity) {
-        'buy'          =>  $qty * $price + $commission,
+        'buy'          =>  $hasLinkedCash ? ($qty * $price + $commission) : 0.0,
         'reinvest_div' =>  $qty * $price + $commission,
         'reinvest_cap' =>  $qty * $price + $commission,
-        'sell'         => -($qty * $price - $commission),
+        'sell'         =>  $hasLinkedCash ? -($qty * $price - $commission) : 0.0,
         'div', 'int'   =>  $incomeAmount,
         default        => 0.0,
     };
@@ -252,14 +258,14 @@ if ($type === 'investment') {
                 )->execute([$cashAcctId, $date, $payee, abs($invAmount), $cleared, $memo, $txnId, currentUserId()]);
                 $cashTxnId = (int)$db->lastInsertId();
                 $db->prepare('UPDATE transactions SET transfer_pair_id=? WHERE id=?')->execute([$cashTxnId, $txnId]);
-            } elseif (!$pairId && $activity === 'buy' && $cashAcctId) {
+            } elseif (!$pairId && $activity === 'buy' && $cashAcctId && $hasLinkedCash) {
                 $db->prepare(
                     'INSERT INTO transactions (account_id,transaction_date,payee,type,amount,cleared_status,memo,transfer_pair_id,created_by)
                      VALUES (?,?,?,\'transfer\',?,?,?,?,?)'
                 )->execute([$cashAcctId, $date, $payee, -abs($invAmount), $cleared, $memo, $txnId, currentUserId()]);
                 $cashTxnId = (int)$db->lastInsertId();
                 $db->prepare('UPDATE transactions SET transfer_pair_id=? WHERE id=?')->execute([$cashTxnId, $txnId]);
-            } elseif (!$pairId && $activity === 'sell' && $cashAcctToId) {
+            } elseif (!$pairId && $activity === 'sell' && $cashAcctToId && $hasLinkedCash) {
                 $db->prepare(
                     'INSERT INTO transactions (account_id,transaction_date,payee,type,amount,cleared_status,memo,transfer_pair_id,created_by)
                      VALUES (?,?,?,\'transfer\',?,?,?,?,?)'
@@ -281,14 +287,14 @@ if ($type === 'investment') {
             )->execute([$savedId, $investmentId, $activity, $qty, $price, $commission]);
 
             // Paired cash transaction for buy/sell/div/int
-            if ($activity === 'buy' && $cashAcctId) {
+            if ($activity === 'buy' && $cashAcctId && $hasLinkedCash) {
                 $db->prepare(
                     'INSERT INTO transactions (account_id,transaction_date,payee,type,amount,cleared_status,memo,transfer_pair_id,created_by)
                      VALUES (?,?,?,\'transfer\',?,?,?,?,?)'
                 )->execute([$cashAcctId, $date, $payee, -abs($invAmount), $cleared, $memo, $savedId, currentUserId()]);
                 $cashTxnId = (int)$db->lastInsertId();
                 $db->prepare('UPDATE transactions SET transfer_pair_id=? WHERE id=?')->execute([$cashTxnId, $savedId]);
-            } elseif ($activity === 'sell' && $cashAcctToId) {
+            } elseif ($activity === 'sell' && $cashAcctToId && $hasLinkedCash) {
                 $db->prepare(
                     'INSERT INTO transactions (account_id,transaction_date,payee,type,amount,cleared_status,memo,transfer_pair_id,created_by)
                      VALUES (?,?,?,\'transfer\',?,?,?,?,?)'

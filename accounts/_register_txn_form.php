@@ -158,6 +158,9 @@
             <div class="txn-field inv-detail-field" id="invFieldCashFrom" style="display:none">
               <label id="invCashFromLabel">Transfer From (Cash)</label>
               <select name="inv_cash_account_id" id="inv_cash_account_id" class="form-select">
+                <?php if (!$linkedAccount): ?>
+                <option value="0" selected>None</option>
+                <?php endif; ?>
                 <?php foreach ($allAccounts as $acc): if ($acc['id'] === $id) continue; ?>
                 <option value="<?= $acc['id'] ?>"
                         <?= ($linkedAccount && $acc['id'] == $linkedAccount['id']) ? 'selected' : '' ?>>
@@ -170,6 +173,9 @@
             <div class="txn-field inv-detail-field" id="invFieldCashTo" style="display:none">
               <label>Transfer To (Cash)</label>
               <select name="inv_cash_account_to_id" id="inv_cash_account_to_id" class="form-select">
+                <?php if (!$linkedAccount): ?>
+                <option value="0" selected>None</option>
+                <?php endif; ?>
                 <?php foreach ($allAccounts as $acc): if ($acc['id'] === $id) continue; ?>
                 <option value="<?= $acc['id'] ?>"
                         <?= ($linkedAccount && $acc['id'] == $linkedAccount['id']) ? 'selected' : '' ?>>

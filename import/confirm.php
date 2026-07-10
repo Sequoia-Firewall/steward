@@ -221,7 +221,29 @@ try {
                 };
             }
 
-            $reportRow['amount']      = $total;
+            // The cash side of a buy/sell only has somewhere real to post to if
+            // this row's account has an actual linked cash sub-account (or, for
+            // external-transfer action types, a resolvable transfer account).
+            // Without one, the investment leg should carry $0, not the estimated
+            // cash cost — otherwise it phantom-books directly onto the
+            // investment account's own balance.
+            [$needsCashCheck, $useXAcctCheck, ] = investCashRouting($actionType);
+            $hasCashTarget = true;
+            if ($needsCashCheck && !in_array($actionType, ['ContribX', 'WithdrwX'])) {
+                if ($useXAcctCheck && $xferAcctName !== '') {
+                    if (!isset($xAccountCache[$xferAcctName])) {
+                        $s = $db->prepare('SELECT id FROM accounts WHERE name = ? AND is_active = 1 LIMIT 1');
+                        $s->execute([$xferAcctName]);
+                        $xAccountCache[$xferAcctName] = (int)($s->fetchColumn() ?: 0);
+                    }
+                    $hasCashTarget = (bool)$xAccountCache[$xferAcctName];
+                } else {
+                    $hasCashTarget = (bool)$rowLinkedCashId;
+                }
+            }
+            $investAmount = $hasCashTarget ? $total : 0.0;
+
+            $reportRow['amount']      = $investAmount;
             $reportRow['action_type'] = $actionType;
             if ($actionType !== '') {
                 $reportActionTypes[$actionType] = ($reportActionTypes[$actionType] ?? 0) + 1;
@@ -296,7 +318,7 @@ try {
                     'INSERT IGNORE INTO transactions (account_id, transaction_date, payee, type, amount, cleared_status, memo, fitid, created_by)
                      VALUES (?, ?, ?, \'investment\', ?, \'cleared\', ?, ?, ?)'
                 );
-                $iStmt->execute([$rowAccountId, $rowDate, $name, $total, $rowMemo, $rowFitid, currentUserId()]);
+                $iStmt->execute([$rowAccountId, $rowDate, $name, $investAmount, $rowMemo, $rowFitid, currentUserId()]);
                 if ($iStmt->rowCount() === 0) {
                     $skipped++;
                     $reportRow['status'] = 'skipped';
