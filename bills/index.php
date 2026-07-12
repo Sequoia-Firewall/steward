@@ -268,8 +268,14 @@ $soonDate = date('Y-m-d', strtotime('+7 days'));
         <td data-val="<?= $statusSort ?>"><span class="bill-status <?= $statusCls ?>"><?= $statusLbl ?></span></td>
         <?php if (canEdit()): ?>
         <td class="text-nowrap">
+          <?php
+            $billAccountDisplay = $bill['account_name'];
+            if ($bill['type'] === 'transfer' && $bill['to_account_name']) {
+                $billAccountDisplay .= ' → ' . $bill['to_account_name'];
+            }
+          ?>
           <button class="btn btn-sm btn-outline-success" title="Post Now"
-                  onclick="postBill(<?= $bill['id'] ?>, <?= h(json_encode($bill['name'])) ?>, <?= h(json_encode((float)$bill['amount'])) ?>, <?= h(json_encode($bill['next_due_date'])) ?>)">
+                  onclick="postBill(<?= $bill['id'] ?>, <?= h(json_encode($bill['name'])) ?>, <?= h(json_encode((float)$bill['amount'])) ?>, <?= h(json_encode($bill['next_due_date'])) ?>, <?= h(json_encode($billAccountDisplay)) ?>)">
             <i class="bi bi-send-check"></i> Post
           </button>
           <button class="btn btn-sm btn-outline-secondary ms-1" title="Skip this period (already entered manually)"
@@ -364,6 +370,7 @@ $soonDate = date('Y-m-d', strtotime('+7 days'));
       </div>
       <div class="modal-body confirm-modal-body">
         <p class="mb-3">Post <strong id="postBillModalName"></strong> as a transaction?</p>
+        <p class="text-muted small mb-3">Posting to: <strong id="postBillModalAccount"></strong></p>
         <div class="row g-3">
           <div class="col-6">
             <label class="form-label required" for="postBillAmountInput">Amount</label>
@@ -616,8 +623,9 @@ function showBillConfirm(title, msg, warnText, btnClass, onConfirm) {
 }
 
 // ── Post Now ───────────────────────────────────────────────────
-function postBill(id, name, amount, date) {
+function postBill(id, name, amount, date, accountDisplay) {
   document.getElementById('postBillModalName').textContent = name;
+  document.getElementById('postBillModalAccount').textContent = accountDisplay;
   document.getElementById('postBillAmountInput').value = parseFloat(amount).toFixed(2);
   document.getElementById('postBillDateInput').value = date;
 

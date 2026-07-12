@@ -9,6 +9,13 @@ function requireLogin(): void {
         exit;
     }
 
+    // Force re-login for every session left over from before the last DB restore
+    if (($_SESSION['session_epoch'] ?? null) !== getSetting('session_epoch', '0')) {
+        session_destroy();
+        header('Location: ' . BASE_PATH . '/login');
+        exit;
+    }
+
     // Idle session timeout
     $timeoutMinutes = (int)getSetting('session_timeout_minutes', '0');
     if ($timeoutMinutes > 0) {
@@ -153,6 +160,7 @@ function login(string $username, string $password): bool {
     $_SESSION['username']      = $user['username'];
     $_SESSION['user_fullname'] = $user['full_name'];
     $_SESSION['user_role']     = $user['role'];
+    $_SESSION['session_epoch'] = getSetting('session_epoch', '0');
 
     // Update last login
     $db->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')->execute([$user['id']]);

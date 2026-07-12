@@ -181,6 +181,16 @@ foreach ($pending as $ver => $path) {
     }
 }
 
+// ── Invalidate every other session ─────────────────────────────
+// A restore can replace user rows, roles, and passwords outright, so any
+// session issued before this point may no longer reflect reality. Bump the
+// global epoch so requireLogin() force-logs-out everyone; re-stamp our own
+// session immediately after so the admin performing the restore isn't
+// booted before they see the result.
+$newEpoch = (string)time();
+setSetting('session_epoch', $newEpoch);
+$_SESSION['session_epoch'] = $newEpoch;
+
 // ── Flash result ───────────────────────────────────────────────
 $msg = 'Restore completed — ' . $success . ' statement(s) executed.';
 if (!empty($migRan)) {
