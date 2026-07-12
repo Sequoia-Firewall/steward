@@ -132,6 +132,24 @@ foreach ($statements as $stmt) {
     }
 }
 
+// ── Invalidate every other session ─────────────────────────────
+// A restore can replace user rows, roles, and passwords outright, so any
+// session issued before this point may no longer reflect reality. Bump the
+// global epoch so requireLogin() force-logs-out everyone; re-stamp our own
+// session immediately after so the admin performing the restore isn't
+// booted before they see the result. This must happen even when some
+// statements failed — a partial restore may still have replaced users.
+if ($success > 0) {
+    $newEpoch = (string)time();
+    try {
+        setSetting('session_epoch', $newEpoch);
+        $_SESSION['session_epoch'] = $newEpoch;
+    } catch (PDOException $e) {
+        // Settings table missing after a broken restore: getSetting() then
+        // returns the '0' default, which fails every epoch check — fail-safe.
+    }
+}
+
 if (!empty($errors)) {
     $preview = implode(' | ', array_slice($errors, 0, 3));
     $more    = count($errors) > 3 ? ' (+' . (count($errors) - 3) . ' more)' : '';
@@ -180,16 +198,6 @@ foreach ($pending as $ver => $path) {
         $migFailed[] = 'v' . $ver . ': ' . implode('; ', $result['errors']);
     }
 }
-
-// ── Invalidate every other session ─────────────────────────────
-// A restore can replace user rows, roles, and passwords outright, so any
-// session issued before this point may no longer reflect reality. Bump the
-// global epoch so requireLogin() force-logs-out everyone; re-stamp our own
-// session immediately after so the admin performing the restore isn't
-// booted before they see the result.
-$newEpoch = (string)time();
-setSetting('session_epoch', $newEpoch);
-$_SESSION['session_epoch'] = $newEpoch;
 
 // ── Flash result ───────────────────────────────────────────────
 $msg = 'Restore completed — ' . $success . ' statement(s) executed.';
