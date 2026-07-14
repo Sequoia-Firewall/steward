@@ -336,6 +336,73 @@ switch ($check) {
                 number_format(abs((float)$pair['debit']['amount']), 2),
             ];
         }
+        $out['fix_confirm'] = 'Automatically link all matched transfer pairs? This will modify database records.';
+        break;
+
+    // ── 8c. Orphaned securities — leftover price history on zero-transaction,
+    //        unwatchlisted securities (preview + purge) ──
+    // Money markets are excluded: sweep cash is recorded as ordinary transactions in the
+    // investment-cash sub-account ledger, so a money-market security record structurally
+    // never has investment activity — flagging it would be pure noise.
+    // Only securities that still have price rows to purge are reported here; a
+    // zero-transaction security with no accumulated price history has nothing this check
+    // can act on and is already visible any time via Portfolio → Show Unowned, so it's
+    // deliberately left out to avoid reporting a permanent, unfixable "issue".
+    case 'orphaned_securities':
+    case 'orphaned_securities_apply':
+        $orphans = $db->query(
+            "SELECT * FROM (
+                 SELECT i.id, i.symbol, i.name, i.type, i.is_active,
+                        (SELECT COUNT(*) FROM investment_prices ip WHERE ip.investment_id = i.id) AS price_rows
+                 FROM investments i
+                 WHERE i.in_watchlist = 0
+                   AND i.type NOT IN ('Index', 'Money Market')
+                   AND NOT EXISTS (SELECT 1 FROM investment_transactions it WHERE it.investment_id = i.id)
+             ) orphan_candidates
+             WHERE price_rows > 0
+             ORDER BY symbol"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $totalPriceRows = (int)array_sum(array_column($orphans, 'price_rows'));
+
+        if ($check === 'orphaned_securities_apply') {
+            // array_column() returns a fresh sequential array — safe to pass straight to
+            // execute() (an array_filter()+array_map() pipeline here would preserve the
+            // original keys and trip PDO's "Invalid parameter number" on a non-sequential array).
+            $ids     = array_column($orphans, 'id');
+            $deleted = 0;
+            if ($ids) {
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $del = $db->prepare("DELETE FROM investment_prices WHERE investment_id IN ($placeholders)");
+                $del->execute($ids);
+                $deleted = $del->rowCount();
+            }
+            logActivity('maintenance_apply', "Purged {$deleted} orphaned security price row" . ($deleted !== 1 ? 's' : ''));
+            $out['count']   = $deleted;
+            $out['message'] = 'Purged ' . number_format($deleted) . ' price row' . ($deleted !== 1 ? 's' : '')
+                             . '. Security records were kept — deactivate any that are truly junk from Portfolio → Show Unowned.';
+            break;
+        }
+
+        $out['columns'] = ['Security', 'Symbol', 'Type', 'Status', 'Price Rows'];
+        foreach ($orphans as $r) {
+            $out['items'][] = [
+                $r['name'],
+                $r['symbol'] ?: '—',
+                $r['type'],
+                $r['is_active'] ? 'Active' : 'Inactive',
+                (int)$r['price_rows'],
+            ];
+        }
+        $out['count'] = count($orphans);
+        if ($totalPriceRows > 0) {
+            $out['fix_action']  = 'orphaned_securities_apply';
+            $out['fix_label']   = 'Purge ' . number_format($totalPriceRows) . ' Price Row' . ($totalPriceRows !== 1 ? 's' : '');
+            $out['fix_icon']    = 'bi-eraser';
+            $out['fix_confirm'] = 'Purge ' . number_format($totalPriceRows) . ' orphaned price row'
+                                 . ($totalPriceRows !== 1 ? 's' : '') . '? Reports are unaffected — these securities '
+                                 . 'have no transactions, so their price history is unreachable. Security records are kept.';
+        }
         break;
 
     // ── 9. Budget items → inactive category ───────────────────

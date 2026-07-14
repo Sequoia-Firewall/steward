@@ -26,12 +26,14 @@ if (!$provider) {
 $db = getDB();
 
 if ($investmentId) {
+    // Explicit single-security fetch (price-history modal, watchlist row refresh) stays
+    // unfiltered on purpose — a manual fetch should work for any security.
     $stmt = $db->prepare("SELECT id, name, symbol, type FROM investments WHERE id = ? AND is_active = 1 AND disable_quotes = 0 AND symbol != ''");
     $stmt->execute([$investmentId]);
+    $investments = $stmt->fetchAll();
 } else {
-    $stmt = $db->query("SELECT id, name, symbol, type FROM investments WHERE is_active = 1 AND disable_quotes = 0 AND symbol != ''");
+    $investments = getQuotableInvestments();
 }
-$investments = $stmt->fetchAll();
 
 if (empty($investments)) {
     echo json_encode(['ok' => false, 'error' => 'No investments with ticker symbols found.']);

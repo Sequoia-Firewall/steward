@@ -883,7 +883,7 @@ pre code {
     <ul>
       <li>Each security is listed with symbol, type, current price, total shares, market value, cost basis, and gain/loss.</li>
       <li>Click any security name to open its <strong>Security Page</strong> — a dedicated page showing a price history chart, cost basis and average cost per share, and a complete transaction history across <em>all</em> accounts. Use the <strong>Export CSV</strong> button on the Security Page to download the full transaction history (Date, Account, Activity, Shares, Price/Share, Commission, Total, Cleared, Memo).</li>
-      <li>Click <strong>Fetch Prices</strong> to retrieve current quotes from a financial data source for all securities that have a valid ticker symbol.</li>
+      <li>Click <strong>Fetch Prices</strong> to retrieve current quotes from a financial data source. A bulk fetch covers index symbols, watchlisted securities, and anything currently held — sold-off, un-watchlisted securities drop off the list automatically. Fetching a single security from its Price History panel always works regardless of these rules.</li>
       <li>Use <strong>Merge Securities</strong> to combine duplicate security records (e.g. the same ETF imported under slightly different names).</li>
     </ul>
 
@@ -958,8 +958,12 @@ pre code {
     <h3>Fetching Prices Automatically</h3>
     <p>
       Go to <strong>Portfolio → Fetch Prices</strong>. Steward retrieves today's closing
-      price for every active security with a recognized ticker symbol. Securities with
-      <em>Disable Quotes</em> checked are skipped.
+      price for every active, quotable security that is an Index, on the Watchlist, or
+      currently held — securities with <em>Disable Quotes</em> checked are always skipped.
+      A security that's fully sold and removed from the Watchlist simply stops being
+      quoted; there's no cleanup step to remember. Fetching a single security manually
+      (from its Price History panel or a Watchlist row) still works for any security,
+      regardless of this rule.
     </p>
 
     <h3>Scheduled Daily Price Refresh</h3>
@@ -1290,9 +1294,20 @@ pre code {
       Accounts</strong> flags cash-sweep deposits whose payee matches a known security but were
       entered as a plain categorized transaction instead of a Buy/Sell/Dividend/Interest
       activity, bypassing per-security tracking (crypto-linked cash accounts are excluded, since
-      crypto doesn't use the same activity model). Security-related checks (default passwords,
-      exposed setup directory, debug files, session timeout) live in their own section on the
-      same page.
+      crypto doesn't use the same activity model). <strong>Orphaned Securities</strong> flags
+      securities with zero investment transactions that aren't on the Watchlist or an
+      Index/Money Market fund and have leftover price history sitting in the database — a
+      remnant from before bulk fetching excluded them (see <a href="#portfolio">Portfolio</a>).
+      The one-click purge removes only those unused price rows; reports are unaffected, since
+      they only load prices for securities with actual transaction history, and the security
+      records themselves are always kept — deactivate any that are truly junk from
+      <strong>Portfolio → Show Unowned</strong>. A zero-transaction security with no
+      accumulated price history has nothing this check can act on, so it won't appear here —
+      use <strong>Portfolio → Show Unowned</strong> any time for a general list of unowned
+      securities regardless of price data. Money-market securities are exempt, since their
+      sweep-cash activity is recorded on the linked cash account, not on the security itself.
+      Security-related checks (default passwords, exposed setup directory, debug files, session
+      timeout) live in their own section on the same page.
     </p>
 
     <h3>Database Maintenance</h3>

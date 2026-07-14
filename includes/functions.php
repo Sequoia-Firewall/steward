@@ -558,6 +558,37 @@ function getAllInvestments(): array {
     )->fetchAll();
 }
 
+// Securities worth quoting in a bulk fetch: active, quotable, ticker present, and
+// either an Index, on the Watchlist, or currently held. Sold-off and un-watchlisted
+// securities drop off automatically — no manual cleanup step to remember. Reports never
+// need prices outside this set: net worth / account balances / portfolio value history
+// all load prices only for investments that appear in investment_transactions.
+function getQuotableInvestments(): array {
+    $db = getDB();
+    return $db->query(
+        "SELECT i.id, i.name, i.symbol, i.type
+         FROM investments i
+         WHERE i.is_active = 1 AND i.disable_quotes = 0 AND i.symbol != ''
+           AND (
+             i.type = 'Index'
+             OR i.in_watchlist = 1
+             OR (
+               SELECT COALESCE(SUM(CASE
+                   WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
+                   WHEN it.activity IN ('sell','remove')                                    THEN -it.quantity
+                   ELSE 0
+               END), 0)
+               FROM investment_transactions it
+               JOIN transactions t ON t.id = it.transaction_id
+               JOIN accounts a     ON a.id = t.account_id
+               WHERE it.investment_id = i.id
+                 AND a.is_investment_cash = 0
+             ) > 0.000001
+           )
+         ORDER BY i.type, i.name"
+    )->fetchAll();
+}
+
 function getInvestmentHoldings(): array {
     $db   = getDB();
     $rows = $db->query(

@@ -22,8 +22,7 @@ if (!$provider) {
 }
 
 $db = getDB();
-$stmt = $db->query("SELECT id, name, symbol, type FROM investments WHERE is_active = 1 AND disable_quotes = 0 AND symbol != ''");
-$investments = $stmt->fetchAll();
+$investments = getQuotableInvestments();
 
 if (empty($investments)) {
     echo "No investments with ticker symbols found.\n";

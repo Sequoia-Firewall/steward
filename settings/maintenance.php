@@ -51,6 +51,8 @@ include __DIR__ . '/../includes/header.php';
            'Transfer transactions not linked to a counterpart — may indicate a missing or deleted leg.'],
           ['link_orphaned_transfers',   'bi-link-45deg',           'Link Orphaned Transfer Pairs',
            'Pairs of unlinked transfer transactions with matching dates and amounts that can be automatically connected.'],
+          ['orphaned_securities',       'bi-eraser',               'Orphaned Securities',
+           'Securities with no investment transactions, not on the Watchlist or an Index/Money Market fund, that have leftover price history from before bulk fetching excluded them. Purging removes only the unused price rows — reports are unaffected, since they only load prices for securities with actual transaction history. Security records are kept; deactivate any that are truly junk from Portfolio → Show Unowned. Only flagged while there\'s price history to purge — for a general list of unowned securities regardless of price data, use Portfolio → Show Unowned any time.'],
           ['budget_inactive_categories','bi-bar-chart-line',       'Budget → Inactive Category',
            'Active budget items assigned to a category that has been deactivated.'],
           ['bills_inactive_accounts',   'bi-calendar-x',           'Bills → Inactive Account',
@@ -272,11 +274,14 @@ function runCheck(row) {
             + '<i class="bi bi-arrow-right-circle"></i> ' + mcEsc(json.fix_label || 'View') + '</a> ';
     }
     if (json.fix_action) {
+      const fixIcon    = mcEsc(json.fix_icon || 'bi-link-45deg');
+      const fixConfirm = mcEsc(json.fix_confirm || 'Apply this fix? This will modify database records.');
       html += '<button type="button" class="btn btn-sm btn-outline-success mb-2"'
             + ' onclick="applyFix(this)"'
             + ' data-check="' + mcEsc(row.dataset.check) + '"'
-            + ' data-fix="' + mcEsc(json.fix_action) + '">'
-            + '<i class="bi bi-link-45deg"></i> ' + mcEsc(json.fix_label || 'Fix All') + '</button> ';
+            + ' data-fix="' + mcEsc(json.fix_action) + '"'
+            + ' data-confirm="' + fixConfirm + '">'
+            + '<i class="bi ' + fixIcon + '"></i> ' + mcEsc(json.fix_label || 'Fix All') + '</button> ';
     }
     html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0"><thead><tr>';
     json.columns.forEach(c => { html += '<th>' + mcEsc(c) + '</th>'; });
@@ -339,11 +344,13 @@ function runAllSecChecks() {
 }
 
 function applyFix(btn) {
-  const checkSlug = btn.dataset.check;
-  const fixAction = btn.dataset.fix;
-  if (!confirm('Automatically link all matched transfer pairs? This will modify database records.')) return;
+  const checkSlug    = btn.dataset.check;
+  const fixAction    = btn.dataset.fix;
+  const confirmMsg   = btn.dataset.confirm || 'Apply this fix? This will modify database records.';
+  const originalHtml = btn.innerHTML;
+  if (!confirm(confirmMsg)) return;
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Linking…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Applying…';
   fetch(MC_URL, {
     method: 'POST',
     body: new URLSearchParams({ csrf_token: MC_CSRF, check: fixAction })
@@ -353,7 +360,7 @@ function applyFix(btn) {
     if (!json.ok) {
       showToast(json.error || 'Fix failed.', 'error');
       btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-link-45deg"></i> Link All Pairs';
+      btn.innerHTML = originalHtml;
       return;
     }
     showToast(json.message || 'Done.', 'success');
@@ -364,7 +371,7 @@ function applyFix(btn) {
     console.error(e);
     showToast('Network error.', 'error');
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-link-45deg"></i> Link All Pairs';
+    btn.innerHTML = originalHtml;
   });
 }
 

@@ -277,7 +277,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
           ?>
           <a href="<?= $secUrl ?>" class="inv-name-link"><?= h($inv['name']) ?></a>
           <?php if (!$owned): ?>
-          <span class="badge inv-not-purchased ms-1">Not purchased</span>
+          <span class="badge inv-not-purchased ms-1">Not in current portfolio</span>
           <?php endif; ?>
         </td>
         <td><?= $inv['symbol'] ? '<span class="inv-symbol">' . h($inv['symbol']) . '</span>' : '<span class="text-muted">—</span>' ?></td>
