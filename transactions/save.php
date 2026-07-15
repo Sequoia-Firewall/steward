@@ -161,10 +161,16 @@ if ($type === 'investment') {
         default        => 0.0,
     };
 
-    // Resolve investment_id from payee name; auto-create if not found (except sell)
-    $invLookup = $db->prepare('SELECT id FROM investments WHERE name = ? AND is_active = 1 ORDER BY id LIMIT 1');
+    // Resolve investment_id from payee name; prefer an active match but fall back to a
+    // deactivated one so recording new activity revives it instead of creating a duplicate.
+    $invLookup = $db->prepare('SELECT id, is_active FROM investments WHERE name = ? ORDER BY is_active DESC, id LIMIT 1');
     $invLookup->execute([$payee]);
-    $investmentId = ($row = $invLookup->fetch()) ? (int)$row['id'] : null;
+    $investmentId = null;
+    $reviveInvId  = null;
+    if ($row = $invLookup->fetch()) {
+        $investmentId = (int)$row['id'];
+        if (!(int)$row['is_active']) $reviveInvId = $investmentId;
+    }
 
     if ($investmentId === null && !in_array($activity, ['sell', 'remove'])) {
         $db->prepare('INSERT INTO investments (name, type, created_by) VALUES (?, \'Stock\', ?)')->execute([$payee, currentUserId()]);
@@ -220,6 +226,10 @@ if ($type === 'investment') {
 
     $db->beginTransaction();
     try {
+        if ($reviveInvId) {
+            $db->prepare('UPDATE investments SET is_active = 1 WHERE id = ?')->execute([$reviveInvId]);
+        }
+
         if ($txnId) {
             // ── Edit ────────────────────────────────────────────
             $db->prepare(

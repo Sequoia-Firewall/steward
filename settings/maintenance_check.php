@@ -350,6 +350,9 @@ switch ($check) {
     // deliberately left out to avoid reporting a permanent, unfixable "issue".
     case 'orphaned_securities':
     case 'orphaned_securities_apply':
+        // Active zero-transaction securities are always flagged (surfaces junk/duplicate
+        // records for the admin to deactivate); a deactivated one only stays flagged while
+        // it still has price rows to purge — once fully cleaned it drops off the check.
         $orphans = $db->query(
             "SELECT * FROM (
                  SELECT i.id, i.symbol, i.name, i.type, i.is_active,
@@ -359,7 +362,7 @@ switch ($check) {
                    AND i.type NOT IN ('Index', 'Money Market')
                    AND NOT EXISTS (SELECT 1 FROM investment_transactions it WHERE it.investment_id = i.id)
              ) orphan_candidates
-             WHERE price_rows > 0
+             WHERE is_active = 1 OR price_rows > 0
              ORDER BY symbol"
         )->fetchAll(PDO::FETCH_ASSOC);
 

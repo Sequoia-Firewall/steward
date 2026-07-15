@@ -37,10 +37,28 @@ try {
             'UPDATE investments SET name=?, symbol=?, cusip=?, type=?, country=?, memo=?, disable_quotes=?, in_watchlist=? WHERE id=?'
         )->execute([$name, $symbol, $cusip, $type, $country, $memo, $disableQuotes, $inWatchlist, $id]);
     } else {
-        $db->prepare(
-            'INSERT INTO investments (name, symbol, cusip, type, country, memo, disable_quotes, in_watchlist, created_by) VALUES (?,?,?,?,?,?,?,?,?)'
-        )->execute([$name, $symbol, $cusip, $type, $country, $memo, $disableQuotes, $inWatchlist, currentUserId()]);
-        $id = (int)$db->lastInsertId();
+        // Prefer reviving a deactivated match (by symbol, then name) over creating a
+        // duplicate — otherwise transactions/price history end up split across two records.
+        $revive = $db->prepare(
+            'SELECT id FROM investments
+             WHERE is_active = 0 AND ((? != \'\' AND symbol = ?) OR name = ?)
+             ORDER BY (symbol = ?) DESC, id LIMIT 1'
+        );
+        $revive->execute([$symbol, $symbol, $name, $symbol]);
+        $reviveId = $revive->fetchColumn();
+
+        if ($reviveId !== false) {
+            $id = (int)$reviveId;
+            $db->prepare(
+                'UPDATE investments SET name=?, symbol=?, cusip=?, type=?, country=?, memo=?, disable_quotes=?, in_watchlist=?, is_active=1 WHERE id=?'
+            )->execute([$name, $symbol, $cusip, $type, $country, $memo, $disableQuotes, $inWatchlist, $id]);
+            setFlash('success', 'Reactivated existing security "' . $name . '" — its previous transactions and price history are back.');
+        } else {
+            $db->prepare(
+                'INSERT INTO investments (name, symbol, cusip, type, country, memo, disable_quotes, in_watchlist, created_by) VALUES (?,?,?,?,?,?,?,?,?)'
+            )->execute([$name, $symbol, $cusip, $type, $country, $memo, $disableQuotes, $inWatchlist, currentUserId()]);
+            $id = (int)$db->lastInsertId();
+        }
     }
     echo json_encode(['ok' => true, 'investment' => [
         'id'             => $id,

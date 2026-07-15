@@ -52,7 +52,7 @@ include __DIR__ . '/../includes/header.php';
           ['link_orphaned_transfers',   'bi-link-45deg',           'Link Orphaned Transfer Pairs',
            'Pairs of unlinked transfer transactions with matching dates and amounts that can be automatically connected.'],
           ['orphaned_securities',       'bi-eraser',               'Orphaned Securities',
-           'Securities with no investment transactions, not on the Watchlist or an Index/Money Market fund, that have leftover price history from before bulk fetching excluded them. Purging removes only the unused price rows — reports are unaffected, since they only load prices for securities with actual transaction history. Security records are kept; deactivate any that are truly junk from Portfolio → Show Unowned. Only flagged while there\'s price history to purge — for a general list of unowned securities regardless of price data, use Portfolio → Show Unowned any time.'],
+           'Securities with no investment transactions, not on the Watchlist or an Index/Money Market fund. Active ones are always listed — often stale or duplicate records worth deactivating from Portfolio. Deactivated securities are only flagged while they still have price rows to purge; once cleaned they drop off. Purging removes only the unused price rows — reports are unaffected, since they only load prices for securities with actual transaction history, and security records are always kept.'],
           ['budget_inactive_categories','bi-bar-chart-line',       'Budget → Inactive Category',
            'Active budget items assigned to a category that has been deactivated.'],
           ['bills_inactive_accounts',   'bi-calendar-x',           'Bills → Inactive Account',

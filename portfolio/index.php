@@ -195,9 +195,9 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
             <i class="bi bi-pencil"></i>
           </button>
           <?php if (isAdmin()): ?>
-          <button class="btn btn-sm btn-outline-danger ms-1" title="Remove"
-                  onclick="confirmDeleteInv(<?= $inv['id'] ?>, <?= h(json_encode($inv['name'])) ?>)">
-            <i class="bi bi-trash"></i>
+          <button class="btn btn-sm btn-outline-danger ms-1" title="Deactivate"
+                  onclick="confirmDeleteInv(<?= $inv['id'] ?>, <?= h(json_encode($inv['name'])) ?>, 0)">
+            <i class="bi bi-eye-slash"></i>
           </button>
           <?php endif; ?>
         </td>
@@ -360,9 +360,9 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
             <i class="bi bi-pencil"></i>
           </button>
           <?php if (isAdmin()): ?>
-          <button class="btn btn-sm btn-outline-danger ms-1" title="Remove"
-                  onclick="confirmDeleteInv(<?= $inv['id'] ?>, <?= h(json_encode($inv['name'])) ?>)">
-            <i class="bi bi-trash"></i>
+          <button class="btn btn-sm btn-outline-danger ms-1" title="Deactivate"
+                  onclick="confirmDeleteInv(<?= $inv['id'] ?>, <?= h(json_encode($inv['name'])) ?>, <?= (float)($totalQty ?? 0) ?>)">
+            <i class="bi bi-eye-slash"></i>
           </button>
           <?php endif; ?>
         </td>
@@ -414,15 +414,22 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content confirm-modal">
       <div class="modal-header confirm-modal-header">
-        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Remove Investment</h5>
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Deactivate Security</h5>
       </div>
       <div class="modal-body confirm-modal-body">
         <p id="confirmInvMsg"></p>
-        <p class="confirm-warning">This action cannot be undone.</p>
+        <div id="confirmInvHoldWarn" class="alert alert-warning small py-2" style="display:none">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          You still hold <span id="confirmInvQty"></span> of this security.
+          Net Worth will keep counting these shares, but the Portfolio and holdings reports will not show them.
+        </div>
+        <p class="text-muted small mb-0">Transactions and price history are kept, but the security is hidden
+          from the Portfolio and current-holdings reports, and price fetching stops. Importing or recording
+          new activity for it reactivates it automatically.</p>
       </div>
       <div class="modal-footer confirm-modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-danger" id="confirmInvBtn">Remove</button>
+        <button type="button" class="btn btn-danger" id="confirmInvBtn">Deactivate</button>
       </div>
     </div>
   </div>
@@ -853,8 +860,16 @@ document.addEventListener('click', e => {
 });
 
 // ── Delete confirmation ─────────────────────────────────────────
-function confirmDeleteInv(id, name) {
-  document.getElementById('confirmInvMsg').textContent = 'Remove "' + name + '" from the portfolio?';
+function confirmDeleteInv(id, name, heldQty) {
+  document.getElementById('confirmInvMsg').textContent = 'Deactivate "' + name + '"?';
+  const warn = document.getElementById('confirmInvHoldWarn');
+  if (heldQty > 0.000001) {
+    document.getElementById('confirmInvQty').textContent =
+      (+heldQty.toFixed(6)) + ' share' + (heldQty === 1 ? '' : 's');
+    warn.style.display = '';
+  } else {
+    warn.style.display = 'none';
+  }
   const btn   = document.getElementById('confirmInvBtn');
   const fresh = btn.cloneNode(true);
   btn.parentNode.replaceChild(fresh, btn);
