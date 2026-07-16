@@ -42,7 +42,7 @@ $monthName = date('F Y', strtotime($startDate));
 
 // ── Budget categories for selected budget ──────────────────────
 $bcStmt = $db->prepare(
-    "SELECT bc.id AS bc_id, bc.category_id, bc.entry_type, bc.amount, c.name, p.name AS parent_name,
+    "SELECT bc.id AS bc_id, bc.category_id, bc.entry_type, bc.amount, c.name, c.type AS category_type, p.name AS parent_name,
             GROUP_CONCAT(bma.month ORDER BY bma.month SEPARATOR ',') AS months,
             GROUP_CONCAT(bma.amount ORDER BY bma.month SEPARATOR ',') AS month_amounts
      FROM budget_categories bc
@@ -97,7 +97,7 @@ if (!empty($acctIds) && !empty($catIds)) {
     $actStmt = $db->prepare(
         "SELECT ts.category_id,
                 COALESCE(ts.subcategory_id, ts.category_id) AS eff_cat_id,
-                ABS(SUM(ts.amount)) AS actual
+                SUM(ts.amount) AS actual
          FROM transaction_splits ts
          JOIN transactions t ON t.id = ts.transaction_id
          WHERE t.transaction_date BETWEEN ? AND ?
@@ -120,7 +120,10 @@ $totBudget = 0;
 $totActual = 0;
 foreach ($budgetItems as $b) {
     $budgeted = (float)$b['budgeted'];
-    $actual   = $actualMap[(int)$b['category_id']] ?? 0;
+    // Signed sum nets refunds against spending; normalize per category type
+    // like budget/view.php (a net-refund month floors at 0, not |net|).
+    $raw      = $actualMap[(int)$b['category_id']] ?? 0.0;
+    $actual   = $b['category_type'] === 'income' ? max(0.0, $raw) : abs(min(0.0, $raw));
     $diff     = round($budgeted - $actual, MONEY_DECIMALS);
     $pct      = $budgeted > 0 ? min($actual / $budgeted * 100, 100) : null;
     $rawPct   = $budgeted > 0 ? ($actual / $budgeted * 100) : null;

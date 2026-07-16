@@ -17,7 +17,7 @@ $stmt = $db->prepare(
        COALESCE(cp.id,   c.id)   AS cat_id,
        COALESCE(cp.name, c.name) AS cat_name,
        DATE_FORMAT(t.transaction_date, '%Y-%m') AS ym,
-       SUM(ABS(ts.amount)) AS total
+       -SUM(ts.amount) AS total
      FROM transaction_splits ts
      JOIN transactions t  ON t.id  = ts.transaction_id
      JOIN categories   c  ON c.id  = ts.category_id
@@ -50,7 +50,7 @@ foreach ($rows as $r) {
     $catData[$cid]['total'] += (float)$r['total'];
 }
 
-$catData = array_filter($catData, fn($c) => $c['total'] > 0);
+$catData = array_filter($catData, fn($c) => $c['total'] >= 0.005);
 uasort($catData, fn($a, $b) => $b['total'] <=> $a['total']);
 
 $monthTotals = [];
@@ -132,7 +132,7 @@ include __DIR__ . '/../includes/header.php';
   <tbody>
     <?php foreach ($catData as $cid => $cat):
       $rowMax    = max(array_values($cat['months']) ?: [0]);
-      $nonZero   = array_filter($cat['months'], fn($v) => $v > 0);
+      $nonZero   = array_filter($cat['months'], fn($v) => abs($v) >= 0.005);
       $rowAvg    = count($nonZero) > 0 ? array_sum($nonZero) / count($nonZero) : 0;
     ?>
     <tr>
@@ -145,11 +145,11 @@ include __DIR__ . '/../includes/header.php';
           <?php if ($opacity > 0): ?>
           style="background:rgba(220,53,69,<?= $opacity ?>);<?= $opacity >= 0.6 ? 'color:#fff;' : '' ?>"
           <?php endif ?>>
-        <?= $amt > 0 ? '<span class="st-cell-amt">' . formatMoney($amt) . '</span>' : '' ?>
+        <?= abs($amt) >= 0.005 ? '<span class="st-cell-amt">' . formatMoney($amt) . '</span>' : '' ?>
       </td>
       <?php endforeach; ?>
       <td class="text-end st-total-col fw-medium"><?= formatMoney($cat['total']) ?></td>
-      <td class="text-end st-avg-col text-muted"><?= $rowAvg > 0 ? formatMoney($rowAvg) : '—' ?></td>
+      <td class="text-end st-avg-col text-muted"><?= abs($rowAvg) >= 0.005 ? formatMoney($rowAvg) : '—' ?></td>
     </tr>
     <?php endforeach; ?>
   </tbody>
@@ -157,7 +157,7 @@ include __DIR__ . '/../includes/header.php';
     <tr class="st-foot">
       <td class="st-cat-col fw-medium">Total</td>
       <?php foreach ($allMonths as $ym): ?>
-      <td class="text-end st-amt-col fw-medium"><?= $monthTotals[$ym] > 0 ? formatMoney($monthTotals[$ym]) : '—' ?></td>
+      <td class="text-end st-amt-col fw-medium"><?= abs($monthTotals[$ym]) >= 0.005 ? formatMoney($monthTotals[$ym]) : '—' ?></td>
       <?php endforeach; ?>
       <td class="text-end st-total-col fw-medium"><?= formatMoney($grandTotal) ?></td>
       <td class="text-end st-avg-col fw-medium">

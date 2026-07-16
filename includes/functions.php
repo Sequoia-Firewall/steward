@@ -354,35 +354,35 @@ function getMonthlySpending(int $year, int $month, array $accountIds = []): arra
         $ph   = implode(',', array_fill(0, count($accountIds), '?'));
         $stmt = $db->prepare(
             "SELECT c.name AS category, COALESCE(p.name, c.name) AS parent_name,
-                    SUM(ABS(ts.amount)) AS total
+                    -SUM(ts.amount) AS total
              FROM transaction_splits ts
              JOIN transactions t  ON t.id  = ts.transaction_id
              JOIN categories c    ON c.id  = ts.category_id
              LEFT JOIN categories p ON p.id = c.parent_id
-             WHERE t.type IN ('withdrawal','transfer')
-               AND c.type != 'transfer'
-               AND t.amount < 0
+             WHERE t.type IN ('withdrawal','transfer','deposit')
+               AND c.type = 'expense'
                AND YEAR(t.transaction_date)  = ?
                AND MONTH(t.transaction_date) = ?
                AND t.account_id IN ($ph)
              GROUP BY ts.category_id
+             HAVING total >= 0.005
              ORDER BY total DESC"
         );
         $stmt->execute([$year, $month, ...$accountIds]);
     } else {
         $stmt = $db->prepare(
             "SELECT c.name AS category, COALESCE(p.name, c.name) AS parent_name,
-                    SUM(ABS(ts.amount)) AS total
+                    -SUM(ts.amount) AS total
              FROM transaction_splits ts
              JOIN transactions t  ON t.id  = ts.transaction_id
              JOIN categories c    ON c.id  = ts.category_id
              LEFT JOIN categories p ON p.id = c.parent_id
-             WHERE t.type IN ('withdrawal','transfer')
-               AND c.type != 'transfer'
-               AND t.amount < 0
+             WHERE t.type IN ('withdrawal','transfer','deposit')
+               AND c.type = 'expense'
                AND YEAR(t.transaction_date)  = ?
                AND MONTH(t.transaction_date) = ?
              GROUP BY ts.category_id
+             HAVING total >= 0.005
              ORDER BY total DESC"
         );
         $stmt->execute([$year, $month]);
@@ -456,7 +456,7 @@ function getBudgetDashboardItems(): array {
         $actStmt = $db->prepare(
             "SELECT ts.category_id,
                     COALESCE(ts.subcategory_id, ts.category_id) AS eff_cat_id,
-                    ABS(SUM(ts.amount)) AS actual
+                    SUM(ts.amount) AS actual
              FROM transaction_splits ts
              JOIN transactions t ON t.id = ts.transaction_id
              WHERE t.transaction_date BETWEEN ? AND ?
@@ -477,7 +477,12 @@ function getBudgetDashboardItems(): array {
 
     foreach ($items as &$item) {
         $budgeted          = getBudgetMonthlyAmount($item, $month, $monthlyAmtMap);
-        $actual            = $actualMap[(int)$item['category_id']] ?? 0;
+        // Signed sum nets refunds against spending; normalize per category type
+        // like budget/view.php (a net-refund month floors at 0, not |net|).
+        $rawActual         = $actualMap[(int)$item['category_id']] ?? 0.0;
+        $actual            = $item['category_type'] === 'income'
+            ? max(0.0, $rawActual)
+            : abs(min(0.0, $rawActual));
         $item['budgeted']  = $budgeted;
         $item['actual']    = $actual;
         $item['remaining'] = $budgeted > 0 ? $budgeted - $actual : null;
@@ -1197,18 +1202,18 @@ function getDashboardSpending(string $period, array $accountIds = []): array {
     }
 
     $stmt = $db->prepare(
-        "SELECT c.name AS category, SUM(ABS(ts.amount)) AS total
+        "SELECT c.name AS category, -SUM(ts.amount) AS total
          FROM transaction_splits ts
          JOIN transactions t ON t.id  = ts.transaction_id
          JOIN categories c   ON c.id  = ts.category_id
          JOIN accounts a     ON a.id  = t.account_id
-         WHERE t.type = 'withdrawal'
-           AND c.type != 'transfer'
-           AND t.amount < 0
+         WHERE t.type IN ('withdrawal','deposit')
+           AND c.type = 'expense'
            AND a.is_investment_cash = 0
            AND $dateSql
            $acctSql
          GROUP BY ts.category_id
+         HAVING total >= 0.005
          ORDER BY total DESC"
     );
     $stmt->execute($params);

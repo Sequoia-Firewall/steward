@@ -37,7 +37,7 @@ $stmt = $db->prepare(
        IF(cp.id IS NOT NULL, c.name, sc.name) AS sub_name,
        t.transaction_date,
        t.payee,
-       ABS(ts.amount) AS amount
+       -ts.amount AS amount
      FROM transaction_splits ts
      JOIN transactions t   ON t.id   = ts.transaction_id
      JOIN categories   c   ON c.id   = ts.category_id
@@ -115,7 +115,7 @@ $chartLabels = [];
 $chartValues = [];
 foreach ($catGroups as $g) {
     $chartLabels[] = $g['name'];
-    $chartValues[] = round($g['total'], 2);
+    $chartValues[] = round(max(0, $g['total']), 2); // donut can't render net-refund categories
 }
 
 // ── CSV Export ─────────────────────────────────────────────────
@@ -287,7 +287,7 @@ include __DIR__ . '/../includes/header.php';
       <div class="cat-group-header">
         <span class="cat-group-name"><?= h($cat['name']) ?></span>
         <span class="cat-group-total"><?= formatMoney($cat['total']) ?></span>
-        <?php $pct = $grandTotal > 0 ? $cat['total'] / $grandTotal * 100 : 0; ?>
+        <?php $pct = $grandTotal > 0 ? max(0, $cat['total']) / $grandTotal * 100 : 0; ?>
         <div class="progress cat-bar">
           <div class="progress-bar bg-primary" style="width:<?= round($pct,1) ?>%" title="<?= round($pct,1) ?>%"></div>
         </div>

@@ -66,7 +66,7 @@ $stmt = $db->prepare(
        COALESCE(cp.id,   c.id)   AS cat_id,
        COALESCE(cp.name, c.name) AS cat_name,
        $periodExpr               AS period,
-       SUM(ABS(ts.amount))       AS amount
+       -SUM(ts.amount)           AS amount
      FROM transaction_splits ts
      JOIN transactions t  ON t.id  = ts.transaction_id
      JOIN categories   c  ON c.id  = ts.category_id
@@ -366,7 +366,7 @@ include __DIR__ . '/../includes/header.php';
       <?php foreach ($allPeriods as $p):
         $amt = $cat['periods'][$p] ?? 0;
       ?>
-      <td class="text-end sh-amt-col"><?= $amt > 0 ? formatMoney($amt) : '<span class="text-muted">—</span>' ?></td>
+      <td class="text-end sh-amt-col"><?= abs($amt) >= 0.005 ? formatMoney($amt) : '<span class="text-muted">—</span>' ?></td>
       <?php endforeach; ?>
       <td class="text-end sh-total-col fw-medium"><?= formatMoney($cat['total']) ?></td>
       <td class="sh-x-col">

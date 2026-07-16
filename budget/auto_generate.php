@@ -48,7 +48,7 @@ $userId = currentUserId();
 // Filters to income/expense categories only; excludes zero totals.
 $stmt = $db->prepare(
     "SELECT COALESCE(ts.subcategory_id, ts.category_id) AS cat_id,
-            SUM(ABS(ts.amount)) / :months AS avg_monthly
+            ABS(SUM(ts.amount)) / :months AS avg_monthly
      FROM transaction_splits ts
      JOIN transactions t  ON t.id  = ts.transaction_id
      JOIN categories   c  ON c.id  = ts.category_id
