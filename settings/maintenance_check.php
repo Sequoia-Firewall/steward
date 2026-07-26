@@ -117,11 +117,12 @@ switch ($check) {
         $out['count'] = count($rows);
         break;
 
-    // ── 4. Securities without CUSIP ────────────────────────────
+    // ── 4. Securities without CUSIP or ticker ──────────────────
     case 'securities_no_cusip':
         $rows = $db->query(
             "SELECT name, symbol, type FROM investments
-             WHERE is_active = 1 AND (cusip IS NULL OR cusip = '')
+             WHERE is_active = 1
+               AND ((cusip IS NULL OR cusip = '') OR (symbol IS NULL OR symbol = ''))
              ORDER BY name"
         )->fetchAll(PDO::FETCH_ASSOC);
 
