@@ -886,7 +886,7 @@
     const tbody = document.getElementById('manualPriceBody');
     tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3 small"><span class="spinner-border spinner-border-sm"></span> Loading…</td></tr>';
     try {
-      const res  = await fetch(BASE_PATH + '/portfolio/price_history?investment_id=' + encodeURIComponent(pendingInvId));
+      const res  = await fetch(BASE_PATH + '/portfolio/price_history?investment_id=' + encodeURIComponent(pendingInvId) + '&real_only=1');
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'Load failed');
       renderHistory(data.prices);

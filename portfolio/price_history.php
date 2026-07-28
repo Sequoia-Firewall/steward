@@ -11,6 +11,8 @@ if (!$investmentId) {
     exit;
 }
 
+$realOnly = ($_GET['real_only'] ?? '') === '1';
+
 $db = getDB();
 
 $invStmt = $db->prepare('SELECT id, name, symbol, type FROM investments WHERE id = ? AND is_active = 1');
@@ -29,6 +31,45 @@ $priceStmt = $db->prepare(
 );
 $priceStmt->execute([$investmentId]);
 $rows = $priceStmt->fetchAll();
+
+// Fill in any date missing a real price with the per-share price recorded on
+// buy/sell/reinvest transactions, so the chart reflects the full history even
+// when only a handful of manual/fetched prices exist. The manual price editor
+// asks for real_only=1 since it edits/deletes actual investment_prices rows.
+if (!$realOnly) {
+    $byDate = [];
+    foreach ($rows as $r) {
+        $byDate[$r['price_date']] = $r;
+    }
+
+    $txnStmt = $db->prepare(
+        'SELECT t.transaction_date AS price_date,
+                SUM(it.price * it.quantity) / SUM(it.quantity) AS close_price
+         FROM investment_transactions it
+         JOIN transactions t ON t.id = it.transaction_id
+         WHERE it.investment_id = ?
+           AND it.activity IN (\'buy\', \'sell\', \'reinvest_div\', \'reinvest_cap\')
+           AND it.price > 0
+         GROUP BY t.transaction_date'
+    );
+    $txnStmt->execute([$investmentId]);
+    foreach ($txnStmt->fetchAll() as $t) {
+        if (isset($byDate[$t['price_date']])) continue;
+        $byDate[$t['price_date']] = [
+            'price_date'  => $t['price_date'],
+            'open_price'  => null,
+            'high_price'  => null,
+            'low_price'   => null,
+            'close_price' => $t['close_price'],
+            'volume'      => null,
+            'vwap'        => null,
+            'source'      => 'transaction',
+        ];
+    }
+
+    ksort($byDate);
+    $rows = array_values($byDate);
+}
 
 $holdingStmt = $db->prepare(
     'SELECT
