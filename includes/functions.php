@@ -501,6 +501,9 @@ function getBudgetDashboardItems(): array {
  * Falls back to cost-basis price for securities without a market price.
  */
 function getInvestmentAccountMarketValues(): array {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+
     $db = getDB();
 
     // Net quantity held per account + investment
@@ -521,7 +524,7 @@ function getInvestmentAccountMarketValues(): array {
          GROUP BY t.account_id, it.investment_id'
     )->fetchAll();
 
-    if (empty($rows)) return [];
+    if (empty($rows)) return $cache = [];
 
     $latestPrices = getLatestInvestmentPrices();
 
@@ -538,7 +541,7 @@ function getInvestmentAccountMarketValues(): array {
             $values[$accountId] += $price * $qty;
         }
     }
-    return $values;
+    return $cache = $values;
 }
 
 function getAllInvestments(): array {
@@ -688,20 +691,39 @@ function logActivity(string $event, string $description, ?int $userId = null, ?s
 
 // ── Investment prices ───────────────────────────────────────────
 
-function getLatestInvestmentPrices(): array {
+// Memoized for the duration of one request — several unrelated dashboard/report
+// code paths call this independently. Pass $forceRefresh after writing new price
+// rows in the same request (see accounts/apply_reconciliation.php) so a stale
+// cached result isn't served back.
+function getLatestInvestmentPrices(bool $forceRefresh = false): array {
+    static $cache = null;
+    if ($cache !== null && !$forceRefresh) return $cache;
     try {
+        // Max-date-per-investment + correlated prev-close lookup instead of two window
+        // functions over the whole table — both use the (investment_id, price_date) index.
         $rows = getDB()->query(
-            'SELECT investment_id, close_price, price_date, source, prev_close
+            'SELECT latest.investment_id, latest.close_price, latest.price_date, latest.source,
+                    COALESCE(latest.volume, 0) AS volume,
+                    (
+                        SELECT ip2.close_price
+                        FROM investment_prices ip2
+                        WHERE ip2.investment_id = latest.investment_id
+                          AND ip2.price_date < latest.price_date
+                        ORDER BY ip2.price_date DESC
+                        LIMIT 1
+                    ) AS prev_close
              FROM (
-                 SELECT investment_id, close_price, price_date, source,
-                        LAG(close_price) OVER (PARTITION BY investment_id ORDER BY price_date) AS prev_close,
-                        ROW_NUMBER()     OVER (PARTITION BY investment_id ORDER BY price_date DESC) AS rn
-                 FROM investment_prices
-             ) ranked
-             WHERE rn = 1'
+                 SELECT ip.investment_id, ip.close_price, ip.price_date, ip.source, ip.volume
+                 FROM investment_prices ip
+                 JOIN (
+                     SELECT investment_id, MAX(price_date) AS max_date
+                     FROM investment_prices
+                     GROUP BY investment_id
+                 ) m ON m.investment_id = ip.investment_id AND m.max_date = ip.price_date
+             ) latest'
         )->fetchAll();
     } catch (Exception $e) {
-        return [];
+        return $cache = [];
     }
     $prices = [];
     foreach ($rows as $row) {
@@ -709,10 +731,11 @@ function getLatestInvestmentPrices(): array {
             'price'      => (float)$row['close_price'],
             'price_date' => $row['price_date'],
             'source'     => $row['source'],
+            'volume'     => (float)$row['volume'],
             'prev_close' => $row['prev_close'] !== null ? (float)$row['prev_close'] : null,
         ];
     }
-    return $prices;
+    return $cache = $prices;
 }
 
 function getInvestmentCostBases(): array {
@@ -913,37 +936,55 @@ function renderFlash(): string {
 // Reconstructs investment account market values at each given date (YYYY-MM-DD),
 // forward-filling the latest known price as of that date for each holding.
 function getHistoricalInvestmentMarketValues(array $accounts, array $points): array {
-    $db = getDB();
+    // getDashboardNetWorth() and getDashboardNetWorthToday() both call this with the
+    // same account set but different $points — cache the expensive fetch (full
+    // transaction + price history for the account set) per request, keyed by the
+    // sorted investment-account-ID list, and only redo the per-$points projection below.
+    static $fetchCache = [];
+
     $investAccts   = array_filter($accounts, fn($a) => isInvestLike($a['type']) && !$a['is_investment_cash']);
-    $investAcctIds = array_column(array_values($investAccts), 'id');
+    $investAcctIds = array_values(array_unique(array_column(array_values($investAccts), 'id')));
     $histMktValues = []; // point -> [acct_id -> float]
     if (empty($investAcctIds)) return $histMktValues;
 
-    $iph   = implode(',', array_fill(0, count($investAcctIds), '?'));
-    $iStmt = $db->prepare(
-        "SELECT t.account_id, it.investment_id, it.activity, it.quantity, it.price, t.transaction_date
-         FROM investment_transactions it
-         JOIN transactions t ON t.id = it.transaction_id
-         WHERE t.account_id IN ($iph)
-         ORDER BY t.transaction_date"
-    );
-    $iStmt->execute($investAcctIds);
-    $iTxns  = $iStmt->fetchAll();
-    $invIds = array_values(array_unique(array_column($iTxns, 'investment_id')));
+    sort($investAcctIds);
+    $cacheKey = implode(',', $investAcctIds);
 
-    $priceHist = [];
-    if (!empty($invIds)) {
-        $pph   = implode(',', array_fill(0, count($invIds), '?'));
-        $pStmt = $db->prepare(
-            "SELECT investment_id, price_date, close_price
-             FROM investment_prices WHERE investment_id IN ($pph)
-             ORDER BY investment_id, price_date"
+    if (isset($fetchCache[$cacheKey])) {
+        $iTxns     = $fetchCache[$cacheKey]['iTxns'];
+        $priceHist = $fetchCache[$cacheKey]['priceHist'];
+    } else {
+        $db    = getDB();
+        $iph   = implode(',', array_fill(0, count($investAcctIds), '?'));
+        $iStmt = $db->prepare(
+            "SELECT t.account_id, it.investment_id, it.activity, it.quantity, it.price, t.transaction_date
+             FROM investment_transactions it
+             JOIN transactions t ON t.id = it.transaction_id
+             WHERE t.account_id IN ($iph)
+             ORDER BY t.transaction_date"
         );
-        $pStmt->execute($invIds);
-        foreach ($pStmt->fetchAll() as $p) {
-            $priceHist[(int)$p['investment_id']][] = [$p['price_date'], (float)$p['close_price']];
+        $iStmt->execute($investAcctIds);
+        $iTxns  = $iStmt->fetchAll();
+        $invIds = array_values(array_unique(array_column($iTxns, 'investment_id')));
+
+        $priceHist = [];
+        if (!empty($invIds)) {
+            $pph   = implode(',', array_fill(0, count($invIds), '?'));
+            $pStmt = $db->prepare(
+                "SELECT investment_id, price_date, close_price
+                 FROM investment_prices WHERE investment_id IN ($pph)
+                 ORDER BY investment_id, price_date"
+            );
+            $pStmt->execute($invIds);
+            foreach ($pStmt->fetchAll() as $p) {
+                $priceHist[(int)$p['investment_id']][] = [$p['price_date'], (float)$p['close_price']];
+            }
         }
+
+        $fetchCache[$cacheKey] = ['iTxns' => $iTxns, 'priceHist' => $priceHist];
     }
+
+    $invIds = array_values(array_unique(array_column($iTxns, 'investment_id')));
 
     $priceAtPoint = [];
     foreach ($priceHist as $iid => $plist) {
@@ -1222,66 +1263,67 @@ function getDashboardSpending(string $period, array $accountIds = []): array {
 
 function getDashboardPortfolioSnapshot(): array {
     try {
-        $rows = getDB()->query(
-            "SELECT i.id, i.name, i.symbol, i.type, i.country,
-                    p.price, p.prev_close, p.price_date, p.volume,
-                    COALESCE(h.qty, 0) AS qty
-             FROM investments i
-             INNER JOIN (
-                 SELECT investment_id,
-                        close_price AS price,
-                        price_date,
-                        COALESCE(volume, 0) AS volume,
-                        LAG(close_price) OVER (PARTITION BY investment_id ORDER BY price_date) AS prev_close,
-                        ROW_NUMBER()     OVER (PARTITION BY investment_id ORDER BY price_date DESC) AS rn
-                 FROM investment_prices
-             ) p ON p.investment_id = i.id AND p.rn = 1
-             LEFT JOIN (
-                 SELECT it.investment_id,
-                        SUM(CASE
-                            WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
-                            WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
-                            ELSE 0
-                        END) AS qty
-                 FROM investment_transactions it
-                 JOIN transactions t ON t.id = it.transaction_id
-                 JOIN accounts a     ON a.id = t.account_id
-                 WHERE a.is_investment_cash = 0
-                 GROUP BY it.investment_id
-             ) h ON h.investment_id = i.id
-             WHERE i.is_active = 1
-             ORDER BY i.type, i.name"
+        $db   = getDB();
+        $invs = $db->query(
+            "SELECT id, name, symbol, type, country FROM investments WHERE is_active = 1 ORDER BY type, name"
+        )->fetchAll();
+
+        $holdingRows = $db->query(
+            "SELECT it.investment_id,
+                    SUM(CASE
+                        WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
+                        WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
+                        ELSE 0
+                    END) AS qty
+             FROM investment_transactions it
+             JOIN transactions t ON t.id = it.transaction_id
+             JOIN accounts a     ON a.id = t.account_id
+             WHERE a.is_investment_cash = 0
+             GROUP BY it.investment_id"
         )->fetchAll();
     } catch (Exception $e) {
         return [];
     }
 
-    return array_map(function (array $r): array {
-        $price     = (float)$r['price'];
-        $prevClose = $r['prev_close'] !== null ? (float)$r['prev_close'] : null;
-        $qty       = (float)$r['qty'];
+    $qtyMap = [];
+    foreach ($holdingRows as $h) $qtyMap[(int)$h['investment_id']] = (float)$h['qty'];
+
+    // Reuse the shared, request-cached latest-price lookup instead of a second
+    // window-function query over the same table.
+    $latestPrices = getLatestInvestmentPrices();
+
+    $out = [];
+    foreach ($invs as $i) {
+        $iid = (int)$i['id'];
+        $p   = $latestPrices[$iid] ?? null;
+        if ($p === null) continue; // matches the prior INNER JOIN — only priced securities
+
+        $price     = $p['price'];
+        $prevClose = $p['prev_close'];
+        $qty       = $qtyMap[$iid] ?? 0.0;
         $dayChg    = $prevClose !== null ? round($price - $prevClose, 4) : null;
         $dayChgPct = ($dayChg !== null && $prevClose != 0)
             ? round($dayChg / $prevClose * 100, 2) : null;
         $mktVal    = round($qty * $price, 2);
         $valChg    = $dayChg !== null ? round($qty * $dayChg, 2) : null;
-        return [
-            'id'          => (int)$r['id'],
-            'name'        => $r['name'],
-            'symbol'      => $r['symbol'],
-            'type'        => $r['type'],
-            'country'     => $r['country'],
+        $out[] = [
+            'id'          => $iid,
+            'name'        => $i['name'],
+            'symbol'      => $i['symbol'],
+            'type'        => $i['type'],
+            'country'     => $i['country'],
             'price'       => $price,
             'prev_close'  => $prevClose,
-            'price_date'  => $r['price_date'],
-            'volume'      => (float)$r['volume'],
+            'price_date'  => $p['price_date'],
+            'volume'      => $p['volume'],
             'qty'         => $qty,
             'day_chg'     => $dayChg,
             'day_chg_pct' => $dayChgPct,
             'mkt_val'     => $mktVal,
             'val_chg'     => $valChg,
         ];
-    }, $rows);
+    }
+    return $out;
 }
 
 function getDashboardWatchlist(): array {

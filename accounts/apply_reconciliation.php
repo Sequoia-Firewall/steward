@@ -155,7 +155,9 @@ try {
          HAVING net_qty > 0.000001'
     );
     $qtyStmt->execute([$accountId]);
-    $latestPrices = getLatestInvestmentPrices();
+    // Force a fresh read — prices were just upserted above, and the request-scoped
+    // cache in getLatestInvestmentPrices() must not serve stale values here.
+    $latestPrices = getLatestInvestmentPrices(true);
 
     $totalValue = 0.0;
     foreach ($qtyStmt->fetchAll() as $h) {

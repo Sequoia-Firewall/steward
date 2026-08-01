@@ -17,22 +17,17 @@ switch ($period) {
 }
 
 try {
-    $db   = getDB();
+    $db = getDB();
+    // Current price reuses the shared, request-cached latest-price lookup instead
+    // of a third bespoke "latest price" query; the historical (as-of $startDate)
+    // side genuinely differs per request and still needs its own query.
+    $latestPrices = getLatestInvestmentPrices();
+
     $stmt = $db->prepare(
         "SELECT i.id, i.name, i.symbol, i.type,
-                cur.close_price              AS current_price,
                 hist.close_price             AS start_price,
                 COALESCE(h.qty, 0)           AS qty
          FROM investments i
-         INNER JOIN (
-             SELECT ip.investment_id, ip.close_price
-             FROM investment_prices ip
-             INNER JOIN (
-                 SELECT investment_id, MAX(price_date) AS mx
-                 FROM investment_prices
-                 GROUP BY investment_id
-             ) m ON m.investment_id = ip.investment_id AND m.mx = ip.price_date
-         ) cur ON cur.investment_id = i.id
          LEFT JOIN (
              SELECT ip.investment_id, ip.close_price
              FROM investment_prices ip
@@ -67,7 +62,9 @@ try {
 
 $rows = [];
 foreach ($rawRows as $r) {
-    $cur    = (float)$r['current_price'];
+    $iid = (int)$r['id'];
+    if (!isset($latestPrices[$iid])) continue; // matches the prior INNER JOIN on current price
+    $cur    = $latestPrices[$iid]['price'];
     $hist   = $r['start_price'] !== null ? (float)$r['start_price'] : null;
     $qty    = (float)$r['qty'];
     $chg    = $hist !== null ? round($cur - $hist, 4)          : null;
