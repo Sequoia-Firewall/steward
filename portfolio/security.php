@@ -56,22 +56,31 @@ $actLabels = [
 ];
 
 // Use the same functions as portfolio/index for consistency (handles splits, investment cash filter)
-$allHoldings = getInvestmentHoldings();
+$allHoldings  = getInvestmentHoldings();
 $allCostBases = getInvestmentCostBases();
+$allPrices    = getLatestInvestmentPrices();
 $invHeld  = $allHoldings[$invId]  ?? [];
 $basisRow = $allCostBases[$invId] ?? null;
+$priceRow = $allPrices[$invId]    ?? null;
 
-// Build per-account share balance from holdings (same data source as portfolio/index)
+$latestPrice = $priceRow ? (float)$priceRow['price'] : null;
+
+// Build per-account share balance + current value from holdings (same data source as portfolio/index)
 $shareBalance = [];
 foreach ($invHeld as $hld) {
+    $qty = (float)$hld['quantity'];
     $shareBalance[(int)$hld['account_id']] = [
-        'qty'  => (float)$hld['quantity'],
-        'name' => $hld['account_name'],
+        'qty'   => $qty,
+        'name'  => $hld['account_name'],
+        'value' => $latestPrice !== null ? $qty * $latestPrice : null,
     ];
 }
 $sharesOwned     = array_sum(array_column($invHeld, 'quantity'));
 $totalCost       = ($basisRow && $sharesOwned > 0.000001) ? $basisRow['avg_cost'] * $sharesOwned : 0.0;
 $avgCostPerShare = ($basisRow && $sharesOwned > 0.000001) ? $basisRow['avg_cost'] : 0.0;
+$mktValue        = ($latestPrice !== null && $sharesOwned > 0.000001) ? $latestPrice * $sharesOwned : null;
+$gainLoss        = ($mktValue !== null && $totalCost > 0) ? $mktValue - $totalCost : null;
+$gainPct         = ($gainLoss !== null && $totalCost > 0) ? ($gainLoss / $totalCost) * 100 : null;
 
 // Buy/sell transactions for the inline price history chart markers
 $chartTxns = [];
@@ -153,12 +162,23 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
   <span class="fs-5 fw-semibold">
     <?= rtrim(rtrim(number_format($sharesOwned, 6), '0'), '.') ?> shares owned
   </span>
+  <?php if ($mktValue !== null): ?>
+  <span class="text-muted" style="font-size:.95rem">
+    Value: <strong class="inv-mktval text-body"><?= formatMoney($mktValue) ?></strong>
+  </span>
+  <?php endif; ?>
   <?php if ($totalCost > 0): ?>
   <span class="text-muted" style="font-size:.95rem">
     Cost: <strong class="text-body"><?= formatMoney($totalCost) ?></strong>
   </span>
   <span class="text-muted" style="font-size:.95rem">
     Avg cost/share: <strong class="text-body"><?= formatMoney($avgCostPerShare) ?></strong>
+  </span>
+  <?php endif; ?>
+  <?php if ($gainLoss !== null): ?>
+  <span class="inv-gain <?= $gainLoss >= 0 ? 'gain-pos' : 'gain-neg' ?>" style="font-size:.95rem">
+    <?= ($gainLoss >= 0 ? '+' : '') . formatMoney($gainLoss) ?>
+    <span class="gain-pct">(<?= ($gainPct >= 0 ? '+' : '') . number_format($gainPct, 1) ?>%)</span>
   </span>
   <?php endif; ?>
   <?php else: ?>
@@ -277,8 +297,11 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
     </span>
     <?php foreach ($shareBalance as $acctId => $hld): ?>
     <span class="text-muted small">
-      <?= h($hld['name']) ?>:
+      <a href="<?= BASE_PATH ?>/accounts/register?id=<?= $acctId ?>" class="inv-account-link"><?= h($hld['name']) ?></a>:
       <strong><?= rtrim(rtrim(number_format($hld['qty'], 6), '0'), '.') ?> shares</strong>
+      <?php if ($hld['value'] !== null): ?>
+      (<strong class="inv-mktval"><?= formatMoney($hld['value']) ?></strong>)
+      <?php endif; ?>
     </span>
     <?php endforeach; ?>
   </div>
