@@ -51,6 +51,7 @@ CREATE TABLE users (
     full_name     VARCHAR(100) DEFAULT NULL,
     role          ENUM('user','viewer','administrator') NOT NULL DEFAULT 'user',
     is_active     TINYINT(1)   NOT NULL DEFAULT 1,
+    notes         TEXT         DEFAULT NULL,
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login    TIMESTAMP    NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

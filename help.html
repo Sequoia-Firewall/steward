@@ -267,7 +267,7 @@ pre code {
 
   <!-- ── Sidebar ──────────────────────────────────────────── -->
   <nav class="sidebar" id="sidebar">
-    <div class="version-tag">Version 2026R1</div>
+    <div class="version-tag">Version 2026R2</div>
 
     <div class="sidebar-section">Getting Started</div>
     <a href="#overview"><i class="bi bi-house-door"></i> Overview</a>
@@ -1226,6 +1226,17 @@ pre code {
       <li><strong>Transaction Form Position</strong> — when enabled, the new transaction entry form appears <em>above</em> the transaction list in the account register instead of below it.</li>
     </ul>
 
+    <h3>Activity Log (Audit Trail)</h3>
+    <p>
+      <strong>Gear → Activity Log</strong> (administrator only) records sign-ins, transaction
+      changes, and other account activity, each entry stamped with the user who performed it.
+      This is why user deletion is restricted (see <a href="#users">Users</a>): permanently
+      removing a user who has entered transactions would sever that link and leave gaps in
+      the trail. Deactivating a user instead of deleting them keeps their history intact and
+      attributable while blocking further sign-ins. Old entries can be purged by age from the
+      Activity Log page itself.
+    </p>
+
     <!-- ════════════════════════════════════════════════════ -->
     <span class="anchor" id="users"></span>
     <h2><i class="bi bi-people"></i> Users</h2>
@@ -1234,9 +1245,10 @@ pre code {
       Manage user accounts under <strong>Gear → Users</strong> (administrator only).
     </p>
     <ul>
-      <li><strong>Add User</strong> — enter username, full name, email, role, and initial password.</li>
-      <li><strong>Edit</strong> — change any user's details or reset their password.</li>
-      <li><strong>Deactivate</strong> — prevents a user from logging in without deleting their record.</li>
+      <li><strong>Add User</strong> — enter username, full name, email, role, initial password, and an optional notes field to describe who the account belongs to or why it exists.</li>
+      <li><strong>Edit</strong> — change any user's details, notes, or reset their password.</li>
+      <li><strong>Deactivate</strong> — prevents a user from logging in without deleting their record. This is the preferred way to retire an account.</li>
+      <li><strong>Delete</strong> — only available for users with no transaction history. A user who has ever entered a transaction cannot be deleted, since doing so would erase who is attributed to it in the <a href="#settings">Activity Log</a>; deactivate that user instead.</li>
     </ul>
 
     <div class="warn"><i class="bi bi-exclamation-triangle-fill"></i>

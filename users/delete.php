@@ -33,6 +33,16 @@ if ($user && $user['role'] === 'administrator' && (int)$user['is_active'] === 1)
 }
 
 if ($user) {
+    $txnChk = $db->prepare('SELECT COUNT(*) FROM transactions WHERE created_by = ?');
+    $txnChk->execute([$id]);
+    if ((int)$txnChk->fetchColumn() > 0) {
+        setFlash('error', 'User "' . $user['username'] . '" has transaction history and cannot be deleted. Deactivate the account instead.');
+        header('Location: ' . BASE_PATH . '/users/index');
+        exit;
+    }
+
+    $db->prepare('DELETE FROM user_prefs WHERE user_id = ?')->execute([$id]);
+    $db->prepare('DELETE FROM dashboard_bookmarks WHERE user_id = ?')->execute([$id]);
     $db->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
     setFlash('success', 'User "' . $user['username'] . '" deleted.');
 } else {

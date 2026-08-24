@@ -4,7 +4,7 @@ require_once __DIR__ . '/../includes/functions.php';
 requireRole('administrator');
 
 $errors = [];
-$form   = ['username' => '', 'email' => '', 'full_name' => '', 'role' => 'user'];
+$form   = ['username' => '', 'email' => '', 'full_name' => '', 'role' => 'user', 'notes' => ''];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'email'     => trim($_POST['email']     ?? ''),
         'full_name' => trim($_POST['full_name'] ?? ''),
         'role'      => $_POST['role'] ?? 'user',
+        'notes'     => trim($_POST['notes']     ?? ''),
     ];
     $password  = $_POST['password']  ?? '';
     $password2 = $_POST['password2'] ?? '';
@@ -32,8 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Username already exists.';
         } else {
             $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
-            $db->prepare('INSERT INTO users (username, password_hash, email, full_name, role) VALUES (?, ?, ?, ?, ?)')
-               ->execute([$form['username'], $hash, $form['email'], $form['full_name'], $form['role']]);
+            $db->prepare('INSERT INTO users (username, password_hash, email, full_name, role, notes) VALUES (?, ?, ?, ?, ?, ?)')
+               ->execute([$form['username'], $hash, $form['email'], $form['full_name'], $form['role'], $form['notes'] !== '' ? $form['notes'] : null]);
             setFlash('success', 'User "' . $form['username'] . '" created.');
             header('Location: ' . BASE_PATH . '/users/index');
             exit;
@@ -92,6 +93,10 @@ include __DIR__ . '/../includes/header.php';
       <div class="form-text">
         <b>Viewer</b>: read only. <b>User</b>: enter/edit transactions. <b>Admin</b>: full access.
       </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Notes</label>
+      <textarea name="notes" class="form-control" rows="2" placeholder="Who is this account for / why it exists"><?= h($form['notes']) ?></textarea>
     </div>
   </div>
   <div class="form-actions mt-4">

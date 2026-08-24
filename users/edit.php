@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'full_name' => trim($_POST['full_name'] ?? ''),
         'role'      => $_POST['role'] ?? $user['role'],
         'is_active' => isset($_POST['is_active']) ? 1 : 0,
+        'notes'     => trim($_POST['notes'] ?? ''),
     ];
     $password  = $_POST['password']  ?? '';
     $password2 = $_POST['password2'] ?? '';
@@ -56,13 +57,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
+        $notes = $form['notes'] !== '' ? $form['notes'] : null;
         if ($password) {
             $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
-            $db->prepare('UPDATE users SET username=?, email=?, full_name=?, role=?, is_active=?, password_hash=? WHERE id=?')
-               ->execute([$form['username'], $form['email'], $form['full_name'], $form['role'], $form['is_active'], $hash, $id]);
+            $db->prepare('UPDATE users SET username=?, email=?, full_name=?, role=?, is_active=?, notes=?, password_hash=? WHERE id=?')
+               ->execute([$form['username'], $form['email'], $form['full_name'], $form['role'], $form['is_active'], $notes, $hash, $id]);
         } else {
-            $db->prepare('UPDATE users SET username=?, email=?, full_name=?, role=?, is_active=? WHERE id=?')
-               ->execute([$form['username'], $form['email'], $form['full_name'], $form['role'], $form['is_active'], $id]);
+            $db->prepare('UPDATE users SET username=?, email=?, full_name=?, role=?, is_active=?, notes=? WHERE id=?')
+               ->execute([$form['username'], $form['email'], $form['full_name'], $form['role'], $form['is_active'], $notes, $id]);
         }
         setFlash('success', 'User updated.');
         header('Location: ' . BASE_PATH . '/users/index');
@@ -126,6 +128,10 @@ include __DIR__ . '/../includes/header.php';
                <?= $form['is_active'] ? 'checked' : '' ?>>
         <label class="form-check-label" for="isActive">Active</label>
       </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Notes</label>
+      <textarea name="notes" class="form-control" rows="2" placeholder="Who is this account for / why it exists"><?= h($form['notes'] ?? '') ?></textarea>
     </div>
   </div>
   <div class="form-actions mt-4">

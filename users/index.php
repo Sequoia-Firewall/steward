@@ -6,6 +6,8 @@ requireRole('administrator');
 $db              = getDB();
 $users           = $db->query('SELECT * FROM users ORDER BY role, username')->fetchAll();
 $activeAdminCount = (int)$db->query("SELECT COUNT(*) FROM users WHERE role = 'administrator' AND is_active = 1")->fetchColumn();
+$txnCounts = $db->query('SELECT created_by, COUNT(*) FROM transactions WHERE created_by IS NOT NULL GROUP BY created_by')
+                 ->fetchAll(PDO::FETCH_KEY_PAIR);
 
 $pageTitle   = 'User Management';
 $currentPage = 'users';
@@ -61,10 +63,16 @@ include __DIR__ . '/../includes/header.php';
           $isLastAdmin = $user['role'] === 'administrator'
                       && (int)$user['is_active'] === 1
                       && $activeAdminCount <= 1;
-          if ($user['id'] !== currentUserId() && !$isLastAdmin):
+          $hasTxns = ($txnCounts[$user['id']] ?? 0) > 0;
+          if ($user['id'] !== currentUserId() && !$isLastAdmin && !$hasTxns):
         ?>
         <button class="btn btn-sm btn-outline-danger"
                 onclick="confirmDeleteUser(<?= $user['id'] ?>, '<?= h(addslashes($user['username'])) ?>')">
+          <i class="bi bi-trash"></i>
+        </button>
+        <?php elseif ($user['id'] !== currentUserId() && !$isLastAdmin && $hasTxns): ?>
+        <button class="btn btn-sm btn-outline-secondary" disabled
+                title="Has transaction history — deactivate instead of deleting.">
           <i class="bi bi-trash"></i>
         </button>
         <?php endif; ?>

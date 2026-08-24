@@ -9,7 +9,7 @@ if (!file_exists(__DIR__ . '/database.php') && !defined('MONEY_SETUP_MODE') && p
     exit;
 }
 define('APP_NAME',           'Steward');
-define('APP_VERSION',        '2026R1');
+define('APP_VERSION',        '2026R2');
 define('APP_SCHEMA_VERSION', 1);
 define('BASE_PATH',          '/steward');
 
