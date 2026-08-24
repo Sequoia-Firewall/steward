@@ -3,3 +3,4 @@ config/database.php
 setup/.installed
 priorities.txt
 notes.txt
+build_package.sh
