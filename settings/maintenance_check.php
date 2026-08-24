@@ -118,11 +118,17 @@ switch ($check) {
         break;
 
     // ── 4. Securities without CUSIP or ticker ──────────────────
+    // Flags only securities missing BOTH identifiers — one or the other is enough to
+    // look the security up, so having just a ticker (e.g. GOOGL) is not an issue.
+    // Indexes are excluded: they're benchmarks, not tradable securities, and
+    // structurally never carry a CUSIP or ticker.
     case 'securities_no_cusip':
         $rows = $db->query(
             "SELECT name, symbol, type FROM investments
              WHERE is_active = 1
-               AND ((cusip IS NULL OR cusip = '') OR (symbol IS NULL OR symbol = ''))
+               AND type != 'Index'
+               AND (cusip IS NULL OR cusip = '')
+               AND (symbol IS NULL OR symbol = '')
              ORDER BY name"
         )->fetchAll(PDO::FETCH_ASSOC);
 
