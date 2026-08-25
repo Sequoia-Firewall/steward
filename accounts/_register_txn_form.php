@@ -478,3 +478,26 @@
     </div>
   </div>
 </div>
+
+<!-- Check number gap warning modal -->
+<div class="modal fade" id="checkGapModal" tabindex="-1" aria-labelledby="checkGapModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="checkGapModalLabel">
+          <i class="bi bi-exclamation-triangle"></i> Check Number Gap
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="checkGapBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="checkGapYes">
+          <i class="bi bi-check-lg"></i> Save Anyway
+        </button>
+        <button type="button" class="btn btn-outline-secondary" id="checkGapNo" data-bs-dismiss="modal">
+          <i class="bi bi-x-lg"></i> Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -59,7 +59,7 @@ if (!in_array($colorScheme, $validSchemes, true)) $colorScheme = 'blue';
 <link rel="apple-touch-icon" href="<?= BASE_PATH ?>/assets/img/logo.jpg">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="<?= BASE_PATH ?>/assets/css/money.css">
+<link rel="stylesheet" href="<?= BASE_PATH ?>/assets/css/money.css?v=<?= @filemtime(__DIR__ . '/../assets/css/money.css') ?: time() ?>">
 </head>
 <?php $_negFmt = getSetting('negative_format', 'color'); ?>
 <body<?= $_negFmt === 'parens-bw' ? ' class="neg-no-color"' : '' ?>>

@@ -43,6 +43,8 @@ include __DIR__ . '/../includes/header.php';
            'Active investments lacking a CUSIP identifier or ticker symbol, which prevents reliable deduplication during imports and price lookups.'],
           ['duplicate_transactions',    'bi-copy',                 'Duplicate Transactions',
            'Unreconciled transactions with identical account, date, payee, and amount — likely imported more than once. Reconciled transactions are excluded, as are cleared investment-account transactions verified by holdings reconciliation.'],
+          ['duplicate_check_numbers',   'bi-hash',                 'Duplicate Check Numbers',
+           'The same check number used more than once in the same account. Only purely numeric reference numbers on withdrawals are checked, so non-check entries like EFT, DEP, or ATM are ignored.'],
           ['split_mismatch',            'bi-calculator',           'Split Amount Mismatch',
            'Transactions where the sum of split amounts does not equal the transaction total.'],
           ['orphaned_categories',       'bi-folder-x',             'Transactions With Inactive Category',

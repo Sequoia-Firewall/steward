@@ -90,6 +90,33 @@ if ($num !== '' && $type !== 'investment' && $confirmDupNum !== '1') {
     }
 }
 
+// ── Check number gap warning ────────────────────────────────────
+// Only purely-numeric num values on withdrawals are treated as check numbers — this
+// naturally excludes non-check reference tags like EFT, DEP, ATM, etc. Only warns when
+// the new number is ahead of the highest existing check number (i.e. the next check
+// written), not when backfilling an earlier/historical check.
+$confirmCheckGap = $_POST['confirm_check_gap'] ?? '';
+if ($num !== '' && $type === 'withdrawal' && ctype_digit($num) && $confirmCheckGap !== '1') {
+    $maxStmt = $db->prepare(
+        "SELECT MAX(CAST(num AS UNSIGNED)) FROM transactions
+         WHERE account_id = ? AND type = 'withdrawal' AND num REGEXP '^[0-9]+$' AND id != ?"
+    );
+    $maxStmt->execute([$accountId, $txnId ?: 0]);
+    $maxNum = $maxStmt->fetchColumn();
+    if ($maxNum !== null && (int)$num > (int)$maxNum + 1) {
+        echo json_encode([
+            'ok'                => false,
+            'confirm_check_gap' => [
+                'num'     => $num,
+                'last'    => (int)$maxNum,
+                'missing' => (int)$num - (int)$maxNum - 1,
+                'account' => $account['name'],
+            ],
+        ]);
+        exit;
+    }
+}
+
 // ── Scheduled bill match (new transactions only) ───────────────
 $skipBillId = (int)($_POST['skip_bill_id'] ?? -1); // -1 = not provided, 0 = user declined, >0 = confirm skip
 

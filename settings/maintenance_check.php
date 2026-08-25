@@ -173,6 +173,36 @@ switch ($check) {
         $out['count'] = count($rows);
         break;
 
+    // ── 5b. Duplicate check numbers ─────────────────────────────
+    // Only purely-numeric num values on withdrawals are considered "check numbers" —
+    // this naturally excludes text reference tags like EFT, DEP, ATM, etc.
+    case 'duplicate_check_numbers':
+        $rows = $db->query(
+            "SELECT a.name AS account_name, t.num, COUNT(*) AS cnt,
+                    GROUP_CONCAT(t.id ORDER BY t.id) AS ids
+             FROM transactions t
+             JOIN accounts a ON a.id = t.account_id
+             WHERE t.type = 'withdrawal'
+               AND t.num REGEXP '^[0-9]+$'
+             GROUP BY t.account_id, t.num
+             HAVING cnt > 1
+             ORDER BY a.name, CAST(t.num AS UNSIGNED)
+             LIMIT 100"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $out['columns']      = ['Account', 'Check #', 'Copies', 'IDs'];
+        $out['txn_link_col'] = 3;
+        foreach ($rows as $r) {
+            $out['items'][] = [
+                $r['account_name'],
+                $r['num'],
+                (int)$r['cnt'],
+                $r['ids'],
+            ];
+        }
+        $out['count'] = count($rows);
+        break;
+
     // ── 6. Split amount mismatch ───────────────────────────────
     case 'split_mismatch':
         $rows = $db->query(

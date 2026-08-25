@@ -232,6 +232,8 @@ async function submitTransaction(afterSave = null) {
       }
     } else if (json.confirm_duplicate_num) {
       showDuplicateNumModal(json.confirm_duplicate_num, data, afterSave);
+    } else if (json.confirm_check_gap) {
+      showCheckGapModal(json.confirm_check_gap, data, afterSave);
     } else if (json.confirm_bill) {
       showBillMatchModal(json.confirm_bill, data, afterSave);
     } else {
@@ -327,6 +329,57 @@ function showDuplicateNumModal(dup, originalData, afterSave) {
     bsModal.hide();
     cleanup();
     originalData.set('confirm_duplicate_num', '1');
+    showStatus('<i class="bi bi-arrow-repeat spin"></i> Saving...', 'info');
+    try {
+      const resp2 = await fetch(BASE_PATH + '/transactions/save.php', { method: 'POST', body: originalData });
+      const json2 = await resp2.json();
+      if (json2.ok) {
+        playCashRegister();
+        if (afterSave) { afterSave(); } else {
+          showStatus('<i class="bi bi-check-circle-fill text-success"></i> Saved!', 'success');
+          setTimeout(() => location.reload(), 600);
+        }
+      } else if (json2.confirm_check_gap) {
+        showCheckGapModal(json2.confirm_check_gap, originalData, afterSave);
+      } else if (json2.confirm_bill) {
+        showBillMatchModal(json2.confirm_bill, originalData, afterSave);
+      } else {
+        showStatus('<i class="bi bi-exclamation-triangle-fill text-danger"></i> ' + escHtml(json2.error || 'Error'), 'error');
+      }
+    } catch (e) {
+      showStatus('Network error. Please try again.', 'error');
+    }
+  };
+
+  noBtn.onclick = () => {
+    bsModal.hide();
+    cleanup();
+    showStatus('', '');
+  };
+}
+
+function showCheckGapModal(gap, originalData, afterSave) {
+  const modal = document.getElementById('checkGapModal');
+  if (!modal) return;
+
+  const missingWord = gap.missing === 1 ? 'number' : 'numbers';
+  document.getElementById('checkGapBody').innerHTML =
+    'Check <strong>#' + escHtml(gap.num) + '</strong> skips ' + gap.missing + ' ' + missingWord +
+    ' since the last check used in <strong>' + escHtml(gap.account) + '</strong> (#' + escHtml(String(gap.last)) + ').<br>' +
+    '<span class="text-muted small">Do you want to save this transaction anyway?</span>';
+
+  const bsModal = bootstrap.Modal.getOrCreateInstance(modal);
+  bsModal.show();
+
+  const yesBtn = document.getElementById('checkGapYes');
+  const noBtn  = document.getElementById('checkGapNo');
+
+  const cleanup = () => { yesBtn.onclick = null; noBtn.onclick = null; };
+
+  yesBtn.onclick = async () => {
+    bsModal.hide();
+    cleanup();
+    originalData.set('confirm_check_gap', '1');
     showStatus('<i class="bi bi-arrow-repeat spin"></i> Saving...', 'info');
     try {
       const resp2 = await fetch(BASE_PATH + '/transactions/save.php', { method: 'POST', body: originalData });
