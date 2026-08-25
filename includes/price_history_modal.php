@@ -4,7 +4,7 @@
     <div class="modal-content ph-modal">
       <div class="modal-header ph-modal-header">
         <div>
-          <h5 class="modal-title" id="phModalTitle">Price History</h5>
+          <h5 class="modal-title" id="phModalTitle"><i class="bi bi-graph-up"></i> Price History</h5>
           <div class="ph-modal-sub" id="phModalSub"></div>
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -754,13 +754,13 @@
 <!-- Manual Price History Modal -->
 <div class="modal fade" id="manualPriceModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width:520px">
-    <div class="modal-content">
-      <div class="modal-header" style="background:var(--ms-blue);color:#fff;padding:.75rem 1rem">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <div>
           <h5 class="modal-title mb-0"><i class="bi bi-pencil-square"></i> Price History</h5>
           <div class="small opacity-75 mt-1" id="manualPriceName"></div>
         </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
       <!-- Add / Edit form -->

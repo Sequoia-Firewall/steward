@@ -174,7 +174,7 @@ include __DIR__ . '/../includes/header.php';
 <?php if (canEdit()): ?>
 <?php $nextSched = $schedule[$paymentsMade] ?? null; ?>
 <div class="modal fade" id="payModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title"><i class="bi bi-cash"></i> Record Payment</h5>

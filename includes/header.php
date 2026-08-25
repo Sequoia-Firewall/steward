@@ -217,8 +217,8 @@ if (!in_array($colorScheme, $validSchemes, true)) $colorScheme = 'blue';
 <!-- ── About Modal ─────────────────────────────────────────── -->
 <div class="modal fade" id="aboutModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:420px">
-    <div class="modal-content">
-      <div class="modal-header" style="background:var(--ms-blue);color:#fff;padding:.75rem 1.25rem">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <div class="d-flex align-items-center gap-2">
           <img src="<?= BASE_PATH ?>/assets/img/logo.jpg" alt="" style="width:32px;height:32px;border-radius:6px;object-fit:cover">
           <div>
@@ -226,7 +226,7 @@ if (!in_array($colorScheme, $validSchemes, true)) $colorScheme = 'blue';
             <div style="font-size:.75rem;opacity:.85">Version <?= h(APP_VERSION) ?></div>
           </div>
         </div>
-        <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" style="padding:1.25rem">
         <table class="table table-sm table-borderless mb-0" style="font-size:.875rem">

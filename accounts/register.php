@@ -1184,9 +1184,7 @@ onActivityChange(); // initialise right-column fields immediately (DOM already r
         <p class="confirm-warning">This action cannot be undone.</p>
       </div>
       <div class="modal-footer confirm-modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg"></i> Cancel
-        </button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
           <i class="bi bi-trash"></i> Delete
         </button>

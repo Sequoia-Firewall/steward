@@ -436,20 +436,18 @@
 <!-- Scheduled bill confirmation modal -->
 <div class="modal fade" id="billMatchModal" tabindex="-1" aria-labelledby="billMatchModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title" id="billMatchModalLabel">
           <i class="bi bi-calendar-check"></i> Scheduled Transaction Found
         </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" id="billMatchBody"></div>
-      <div class="modal-footer">
+      <div class="modal-body confirm-modal-body" id="billMatchBody"></div>
+      <div class="modal-footer confirm-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="billMatchNo">Keep Scheduled</button>
         <button type="button" class="btn btn-primary" id="billMatchYes">
-          <i class="bi bi-check-lg"></i> Yes, mark as paid
-        </button>
-        <button type="button" class="btn btn-outline-secondary" id="billMatchNo">
-          <i class="bi bi-x-lg"></i> No, keep scheduled
+          <i class="bi bi-check-lg"></i> Mark as Paid
         </button>
       </div>
     </div>
@@ -459,21 +457,17 @@
 <!-- Duplicate check/reference number warning modal -->
 <div class="modal fade" id="duplicateNumModal" tabindex="-1" aria-labelledby="duplicateNumModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title" id="duplicateNumModalLabel">
-          <i class="bi bi-exclamation-triangle"></i> Duplicate Number
+          <i class="bi bi-exclamation-triangle-fill"></i> Duplicate Number
         </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" id="duplicateNumBody"></div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" id="duplicateNumYes">
-          <i class="bi bi-check-lg"></i> Save Anyway
-        </button>
-        <button type="button" class="btn btn-outline-secondary" id="duplicateNumNo" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg"></i> Cancel
-        </button>
+      <div class="modal-body confirm-modal-body" id="duplicateNumBody"></div>
+      <div class="modal-footer confirm-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="duplicateNumNo" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning" id="duplicateNumYes">Proceed Anyway</button>
       </div>
     </div>
   </div>
@@ -482,21 +476,17 @@
 <!-- Check number gap warning modal -->
 <div class="modal fade" id="checkGapModal" tabindex="-1" aria-labelledby="checkGapModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title" id="checkGapModalLabel">
-          <i class="bi bi-exclamation-triangle"></i> Check Number Gap
+          <i class="bi bi-exclamation-triangle-fill"></i> Check Number Gap
         </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body" id="checkGapBody"></div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" id="checkGapYes">
-          <i class="bi bi-check-lg"></i> Save Anyway
-        </button>
-        <button type="button" class="btn btn-outline-secondary" id="checkGapNo" data-bs-dismiss="modal">
-          <i class="bi bi-x-lg"></i> Cancel
-        </button>
+      <div class="modal-body confirm-modal-body" id="checkGapBody"></div>
+      <div class="modal-footer confirm-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="checkGapNo" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning" id="checkGapYes">Proceed Anyway</button>
       </div>
     </div>
   </div>

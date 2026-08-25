@@ -258,14 +258,14 @@ include __DIR__ . '/../includes/header.php';
 <!-- Reset confirmation modal -->
 <div class="modal fade" id="resetModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-danger">
-      <div class="modal-header bg-danger text-white">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title">
-          <i class="bi bi-exclamation-octagon-fill me-1"></i> Confirm Database Reset
+          <i class="bi bi-exclamation-octagon-fill"></i> Confirm Database Reset
         </h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body confirm-modal-body">
         <p class="fw-semibold mb-2">You are about to permanently delete:</p>
         <ul class="small mb-3">
           <li>Every account, transaction, and split</li>
@@ -277,15 +277,12 @@ include __DIR__ . '/../includes/header.php';
           <span class="text-success fw-semibold">Preserved:</span>
           user accounts, application settings, and market index data.
         </p>
-        <div class="alert alert-danger py-2 mb-3">
-          <i class="bi bi-exclamation-triangle-fill"></i>
-          <strong>This cannot be undone.</strong> If you have not downloaded a backup, close this dialog and do so now.
-        </div>
+        <p class="confirm-warning mb-3">This cannot be undone. If you have not downloaded a backup, close this dialog and do so now.</p>
         <label class="form-label fw-semibold">Type <code>I understand</code> to confirm:</label>
         <input type="text" id="resetConfirmInput" class="form-control" placeholder="I understand"
                autocomplete="off" spellcheck="false">
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer confirm-modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <form method="post" action="<?= BASE_PATH ?>/settings/reset" id="resetForm">
           <?= csrfField() ?>
@@ -451,10 +448,10 @@ async function runBackupNow() {
         showToast(msg, 'warning');
         return;
       }
-      alert('Backup failed: ' + (json.error || 'Unknown error'));
+      showToast('Backup failed: ' + (json.error || 'Unknown error'), 'error');
     }
   } catch {
-    alert('Request failed.');
+    showToast('Request failed.', 'error');
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-play-fill"></i> Back Up Now';
@@ -476,7 +473,7 @@ function deleteBackup(name) {
       if (json.ok) {
         await loadStoredBackups();
       } else {
-        alert('Delete failed: ' + (json.error || 'Unknown error'));
+        showToast('Delete failed: ' + (json.error || 'Unknown error'), 'error');
       }
     },
     'Delete'

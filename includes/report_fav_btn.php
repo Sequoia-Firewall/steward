@@ -171,7 +171,7 @@ function toggleReportFav(btn) {
 
   /* ── Save As ───────────────────────────────────────────────── */
   window.favOpenSaveAs = function () {
-    new bootstrap.Modal(document.getElementById('favSaveAsModal')).show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('favSaveAsModal')).show();
     const inp = document.getElementById('favSaveAsName');
     setTimeout(() => { inp.focus(); inp.select(); }, 300);
   };

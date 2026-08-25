@@ -2046,7 +2046,7 @@ if ($_needChartJs): ?>
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="widgetMaxModalLabel"></h5>
+        <h5 class="modal-title"><i class="bi bi-arrows-fullscreen"></i> <span id="widgetMaxModalLabel"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="widgetMaxModalBody" style="padding:1.25rem"></div>

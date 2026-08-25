@@ -155,10 +155,10 @@ include __DIR__ . '/../includes/header.php';
 <?php if (canEdit()): ?>
 <!-- ── Goal Modal ──────────────────────────────────────────────── -->
 <div class="modal fade" id="goalModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="goalModalTitle">New Savings Goal</h5>
+        <h5 class="modal-title" id="goalModalTitle"><i class="bi bi-piggy-bank"></i> New Savings Goal</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -241,7 +241,7 @@ function openGoalModal() {
   document.getElementById('goal_current').value = '0';
   document.getElementById('goal_notes').value   = '';
   document.getElementById('goalStatus').innerHTML = '';
-  document.getElementById('goalModalTitle').textContent = 'New Savings Goal';
+  document.getElementById('goalModalTitle').innerHTML = '<i class="bi bi-piggy-bank"></i> New Savings Goal';
   onGoalAccountChange();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('goalModal')).show();
 }
@@ -255,7 +255,7 @@ function editGoal(g) {
   document.getElementById('goal_current').value = parseFloat(g.current_amount || 0).toFixed(2);
   document.getElementById('goal_notes').value   = g.notes || '';
   document.getElementById('goalStatus').innerHTML = '';
-  document.getElementById('goalModalTitle').textContent = 'Edit Goal';
+  document.getElementById('goalModalTitle').innerHTML = '<i class="bi bi-piggy-bank"></i> Edit Goal';
   onGoalAccountChange();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('goalModal')).show();
 }

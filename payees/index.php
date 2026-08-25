@@ -236,12 +236,12 @@ include __DIR__ . '/../includes/header.php';
 <!-- ── Rename Modal ────────────────────────────────────────────── -->
 <div class="modal fade" id="renameModal" tabindex="-1" aria-labelledby="renameMTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header" style="background:var(--ms-blue);color:#fff">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title" id="renameMTitle"><i class="bi bi-pencil-square"></i> Rename Payee</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body confirm-modal-body">
         <p class="mb-3">
           Renaming <strong id="renameOldDisplay"></strong>
           — <span id="renameTxnCount" class="text-muted"></span>
@@ -253,7 +253,7 @@ include __DIR__ . '/../includes/header.php';
         </div>
         <div id="renameError" class="alert alert-danger py-2" style="display:none"></div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer confirm-modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary" id="btnDoRename" onclick="submitRename()">
           <i class="bi bi-check-lg"></i> Rename
@@ -266,12 +266,12 @@ include __DIR__ . '/../includes/header.php';
 <!-- ── Merge Modal ─────────────────────────────────────────────── -->
 <div class="modal fade" id="mergeModal" tabindex="-1" aria-labelledby="mergeMTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header" style="background:var(--ms-blue);color:#fff">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title" id="mergeMTitle"><i class="bi bi-arrow-left-right"></i> Merge Payee</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body confirm-modal-body">
         <p class="mb-1">Merge all transactions from:</p>
         <p class="fw-bold fs-5 mb-3" id="mergeSourceDisplay"></p>
         <div class="mb-3">
@@ -283,15 +283,14 @@ include __DIR__ . '/../includes/header.php';
         </div>
         <div id="mergePreview" class="alert alert-warning py-2" style="display:none"></div>
         <div id="mergeError" class="alert alert-danger py-2" style="display:none"></div>
-        <p class="text-muted small mb-0">
-          <i class="bi bi-exclamation-triangle"></i>
+        <p class="confirm-warning mb-0">
           All transactions from the source payee will be reassigned to the target.
           The source payee profile (if any) will be deleted. This cannot be undone.
         </p>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer confirm-modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-warning" id="btnDoMerge" onclick="submitMerge()" disabled>
+        <button type="button" class="btn btn-danger" id="btnDoMerge" onclick="submitMerge()" disabled>
           <i class="bi bi-arrow-left-right"></i> Merge
         </button>
       </div>

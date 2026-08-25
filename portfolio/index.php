@@ -415,6 +415,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
     <div class="modal-content confirm-modal">
       <div class="modal-header confirm-modal-header">
         <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Deactivate Security</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body confirm-modal-body">
         <p id="confirmInvMsg"></p>
@@ -429,7 +430,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
       </div>
       <div class="modal-footer confirm-modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-danger" id="confirmInvBtn">Deactivate</button>
+        <button type="button" class="btn btn-warning" id="confirmInvBtn">Deactivate</button>
       </div>
     </div>
   </div>
@@ -440,12 +441,12 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
 <!-- Fetch Summary Modal -->
 <div class="modal fade" id="fetchSummaryModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header" style="background:var(--ms-blue);color:#fff">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title" id="fetchSummaryTitle">
           <i class="bi bi-cloud-check"></i> Fetch Summary
         </h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body p-0">
         <div id="fetchSummaryTotals" class="px-3 py-2 border-bottom small text-muted"></div>
@@ -477,6 +478,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
     <div class="modal-content confirm-modal">
       <div class="modal-header confirm-modal-header">
         <h5 class="modal-title"><i class="bi bi-calendar-range"></i> Fetch Price History</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body confirm-modal-body">
         <p class="mb-3 text-muted small">Downloads historical daily closing prices for all investments with ticker symbols.</p>

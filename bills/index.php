@@ -320,8 +320,8 @@ $soonDate = date('Y-m-d', strtotime('+7 days'));
 <!-- ── Payee transaction history modal ────────────────────────── -->
 <div class="modal fade" id="payeeHistoryModal" tabindex="-1" aria-labelledby="payeeHistoryTitle" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header" style="background:var(--ms-blue);color:#fff;border-bottom:1px solid var(--ms-blue-mid)">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
         <h5 class="modal-title" id="payeeHistoryTitle">
           <i class="bi bi-receipt"></i> <span id="payeeHistoryTitleText">Transactions</span>
         </h5>
@@ -348,6 +348,7 @@ $soonDate = date('Y-m-d', strtotime('+7 days'));
     <div class="modal-content confirm-modal">
       <div class="modal-header confirm-modal-header">
         <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> <span id="confirmBillTitle">Confirm</span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body confirm-modal-body">
         <p id="confirmBillMsg"></p>
@@ -367,6 +368,7 @@ $soonDate = date('Y-m-d', strtotime('+7 days'));
     <div class="modal-content confirm-modal">
       <div class="modal-header confirm-modal-header">
         <h5 class="modal-title"><i class="bi bi-send-check"></i> Post Transaction</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body confirm-modal-body">
         <p class="mb-3">Post <strong id="postBillModalName"></strong> as a transaction?</p>

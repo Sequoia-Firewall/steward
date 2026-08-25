@@ -253,20 +253,20 @@ if (!empty($sysCats)):
 
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteConfirmModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title text-danger"><i class="bi bi-trash"></i> <span id="deleteConfirmTitle">Delete Category</span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> <span id="deleteConfirmTitle">Delete Category</span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body confirm-modal-body">
         <p class="mb-2" id="deleteConfirmMsg"></p>
         <div id="deleteConfirmWarning" class="alert alert-warning py-2 small mb-0" style="display:none">
           <i class="bi bi-exclamation-triangle-fill"></i>
           <span id="deleteConfirmWarnText"></span>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer confirm-modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-danger" id="deleteConfirmBtn">
           <i class="bi bi-trash"></i> Delete
@@ -279,13 +279,13 @@ if (!empty($sysCats)):
 <!-- Merge Category Modal -->
 <?php if (isAdmin()): ?>
 <div class="modal fade" id="mergeModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-arrow-left-right"></i> Merge Category</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Merge Category</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body confirm-modal-body">
         <p class="mb-1">Merging: <strong id="mergeSourceName"></strong></p>
         <p class="text-muted small mb-3" id="mergeSourceInfo"></p>
         <div class="mb-3">
@@ -299,7 +299,7 @@ if (!empty($sysCats)):
           <span id="mergeWarningText"></span>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer confirm-modal-footer">
         <form id="mergeForm" method="post" action="<?= BASE_PATH ?>/categories/merge">
           <?= csrfField() ?>
           <input type="hidden" name="source_id" id="mergeSourceId">
@@ -401,7 +401,7 @@ function showDeleteModal(title, msg, warnText, onConfirm) {
         warn.style.display = 'none';
     }
     pendingDelete = onConfirm;
-    new bootstrap.Modal(document.getElementById('deleteConfirmModal')).show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteConfirmModal')).show();
 }
 
 document.getElementById('deleteConfirmBtn').addEventListener('click', function () {
@@ -465,7 +465,7 @@ function mergeCat(sourceId, sourceName, sourceParentId, txnCount) {
     document.getElementById('mergeWarning').style.display = 'none';
     document.getElementById('mergeSubmitBtn').disabled = true;
 
-    new bootstrap.Modal(document.getElementById('mergeModal')).show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('mergeModal')).show();
 }
 
 document.getElementById('mergeTargetSelect').addEventListener('change', function () {

@@ -284,7 +284,7 @@ include __DIR__ . '/../includes/header.php';
 function confirmDelete(id, name) {
   document.getElementById('deleteMsg').textContent = 'Delete budget "' + name + '"?';
   document.getElementById('deleteId').value = id;
-  const m = new bootstrap.Modal(document.getElementById('deleteModal'));
+  const m = bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteModal'));
   m.show();
   document.getElementById('confirmDeleteBtn').onclick = () => document.getElementById('deleteForm').submit();
 }

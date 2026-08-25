@@ -481,19 +481,19 @@ function csvCell(v) {
 <!-- ── Reconcile: Account Mismatch Warning Modal ────────────── -->
 <div class="modal fade" id="reconcileWarnModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:460px">
-    <div class="modal-content">
-      <div class="modal-header bg-warning-subtle">
-        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-warning"></i> Account Number Mismatch</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <div class="modal-content confirm-modal">
+      <div class="modal-header confirm-modal-header">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Account Number Mismatch</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body confirm-modal-body">
         <p>The statement doesn't match our account number. Are you sure you want to proceed?</p>
         <table class="table table-sm mb-0">
           <tr><th style="width:40%">Statement account</th><td id="recon_warn_csv_acct" class="font-monospace"></td></tr>
           <tr><th>Our account #</th><td id="recon_warn_our_acct" class="font-monospace"></td></tr>
         </table>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer confirm-modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-warning" onclick="proceedReconcile()">Proceed Anyway</button>
       </div>
@@ -972,7 +972,7 @@ async function saveAdjustment() {
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <h5 class="modal-title" id="txnHistoryTitle">Transaction History</h5>
+          <h5 class="modal-title" id="txnHistoryTitle"><i class="bi bi-clock-history"></i> Transaction History</h5>
           <div class="small text-muted mt-1" id="txnHistorySub"></div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

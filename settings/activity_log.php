@@ -203,21 +203,27 @@ function deleteLogEntries(range, link) {
     '365': 'entries older than 1 year',
     'all': 'ALL activity log entries',
   };
-  if (!confirm('Permanently delete ' + labels[range] + '? This cannot be undone.')) return;
-
-  fetch(ALOG_URL, {
-    method: 'POST',
-    body: new URLSearchParams({ csrf_token: ALOG_CSRF, range }),
-  })
-  .then(r => r.json())
-  .then(json => {
-    if (!json.ok) {
-      alert(json.error || 'Delete failed.');
-      return;
-    }
-    window.location.reload();
-  })
-  .catch(() => alert('Network error.'));
+  appConfirm(
+    'Delete Log Entries',
+    'Permanently delete ' + labels[range] + '?',
+    'This cannot be undone.',
+    () => {
+      fetch(ALOG_URL, {
+        method: 'POST',
+        body: new URLSearchParams({ csrf_token: ALOG_CSRF, range }),
+      })
+      .then(r => r.json())
+      .then(json => {
+        if (!json.ok) {
+          showToast(json.error || 'Delete failed.', 'error');
+          return;
+        }
+        window.location.reload();
+      })
+      .catch(() => showToast('Network error.', 'error'));
+    },
+    'Delete'
+  );
 }
 </script>
 

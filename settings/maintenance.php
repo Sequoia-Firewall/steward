@@ -350,7 +350,10 @@ function applyFix(btn) {
   const fixAction    = btn.dataset.fix;
   const confirmMsg   = btn.dataset.confirm || 'Apply this fix? This will modify database records.';
   const originalHtml = btn.innerHTML;
-  if (!confirm(confirmMsg)) return;
+  appConfirm('Apply Fix', confirmMsg, null, () => runApplyFix(btn, checkSlug, fixAction, originalHtml), 'Apply');
+}
+
+function runApplyFix(btn, checkSlug, fixAction, originalHtml) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Applying…';
   fetch(MC_URL, {
