@@ -202,6 +202,14 @@ include __DIR__ . '/../includes/header.php';
     </div>
   </a>
 
+  <a href="<?= BASE_PATH ?>/reports/expense_analysis" class="report-card">
+    <div class="report-icon"><i class="bi bi-cart-dash"></i></div>
+    <div class="report-info">
+      <div class="report-title">Expense Analysis</div>
+      <div class="report-desc">Expense breakdown by category and month — stacked chart, payee ranking, and monthly pivot table.</div>
+    </div>
+  </a>
+
 </div>
 
 <p class="reports-section-heading">Spending &amp; Cash Flow</p>

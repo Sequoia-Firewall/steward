@@ -40,9 +40,10 @@ const PH_INDICES   = <?= json_encode(array_map(fn($i) => [
     'symbol' => $i['symbol'],
 ], $phIndices)) ?>;
 const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
-    'id'     => (int)$i['id'],
-    'name'   => $i['name'],
-    'symbol' => $i['symbol'],
+    'id'             => (int)$i['id'],
+    'name'           => $i['name'],
+    'symbol'         => $i['symbol'],
+    'disable_quotes' => (int)($i['disable_quotes'] ?? 0),
 ], $investments)) ?>;
 </script>
 
@@ -481,7 +482,13 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body confirm-modal-body">
-        <p class="mb-3 text-muted small">Downloads historical daily closing prices for all investments with ticker symbols.</p>
+        <p class="mb-3 text-muted small">Downloads historical daily closing prices for the selected investment, or for all investments with ticker symbols.</p>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Security</label>
+          <select class="form-select form-select-sm" id="histInvestment">
+            <option value="">All eligible investments</option>
+          </select>
+        </div>
         <div class="row g-2">
           <div class="col">
             <label class="form-label small mb-1">From</label>
@@ -791,6 +798,20 @@ function esc(s) {
 
 // ── History modal ───────────────────────────────────────────────
 function openHistoryModal() {
+  const sel = document.getElementById('histInvestment');
+  const prevValue = sel.value;
+  sel.innerHTML = '<option value="">All eligible investments</option>';
+  ALL_INVESTMENTS
+    .filter(inv => inv.symbol && !inv.disable_quotes)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(inv => {
+      const o = document.createElement('option');
+      o.value = inv.id;
+      o.textContent = inv.name + ' (' + inv.symbol + ')';
+      sel.appendChild(o);
+    });
+  sel.value = prevValue;
+
   document.getElementById('historyStatus').style.display = 'none';
   document.getElementById('btnHistoryFetch').disabled = false;
   document.getElementById('btnHistoryFetch').innerHTML = '<i class="bi bi-cloud-download"></i> Fetch';
@@ -798,10 +819,11 @@ function openHistoryModal() {
 }
 
 async function fetchHistory() {
-  const btn  = document.getElementById('btnHistoryFetch');
-  const from = document.getElementById('histFrom').value;
-  const to   = document.getElementById('histTo').value;
-  const stat = document.getElementById('historyStatus');
+  const btn          = document.getElementById('btnHistoryFetch');
+  const from         = document.getElementById('histFrom').value;
+  const to           = document.getElementById('histTo').value;
+  const investmentId = document.getElementById('histInvestment').value;
+  const stat         = document.getElementById('historyStatus');
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Fetching…';
@@ -813,7 +835,10 @@ async function fetchHistory() {
     'loading'
   );
 
-  const body = new URLSearchParams({ csrf_token: CSRF_TOKEN, mode: 'history', from, to });
+  const body = new URLSearchParams({
+    csrf_token: CSRF_TOKEN, mode: 'history', from, to,
+    ...(investmentId ? { investment_id: investmentId } : {}),
+  });
   try {
     const res  = await fetch(BASE_PATH + '/portfolio/fetch_prices', { method: 'POST', body });
     const data = await res.json();
