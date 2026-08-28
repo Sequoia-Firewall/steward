@@ -911,10 +911,20 @@ function outputCsv(string $filename, array $headers, array $rows): never {
     header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
     header('Cache-Control: no-cache, no-store, must-revalidate');
     $out = fopen('php://output', 'w');
-    fputcsv($out, $headers);
-    foreach ($rows as $row) fputcsv($out, array_values($row));
+    fputcsv($out, array_map('csvSafeCell', $headers));
+    foreach ($rows as $row) fputcsv($out, array_map('csvSafeCell', array_values($row)));
     fclose($out);
     exit;
+}
+
+// Guards against CSV/formula injection: a cell whose text starts with a
+// formula-triggering character opens as a live formula in Excel/Sheets. Plain
+// numbers (e.g. "-1234.56") are left untouched so money columns aren't corrupted.
+function csvSafeCell($value) {
+    if (!is_string($value) || $value === '') return $value;
+    if (!preg_match('/^[=+\-@]/', $value)) return $value;
+    if (preg_match('/^-?\d+(\.\d+)?$/', $value)) return $value;
+    return "'" . $value;
 }
 
 function renderFlash(): string {

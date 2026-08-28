@@ -12,8 +12,13 @@ $defaultEnd   = $today;
 $startDate = $_GET['start'] ?? $defaultStart;
 $endDate   = $_GET['end']   ?? $defaultEnd;
 
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) $startDate = $defaultStart;
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate))   $endDate   = $defaultEnd;
+$ymdRe = '/^(\d{4})-(\d{2})-(\d{2})$/';
+if (!preg_match($ymdRe, $startDate, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
+    $startDate = $defaultStart;
+}
+if (!preg_match($ymdRe, $endDate, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
+    $endDate = $defaultEnd;
+}
 if ($endDate < $startDate) $endDate = $startDate;
 
 // Account filter — mirrors reports/income_analysis.php: investment accounts are
@@ -114,9 +119,10 @@ while ($cursor <= $endDt) {
 }
 $numMonths = max(1, count($allMonths));
 
-$catData   = [];
-$payeeData = [];
-$grandTotal = 0.0;
+$catData       = [];
+$payeeData     = [];
+$monthlyTotals = [];
+$grandTotal    = 0.0;
 
 foreach ($rows as $r) {
     $pid  = (int)$r['parent_id'];
@@ -129,6 +135,7 @@ foreach ($rows as $r) {
     }
     $catData[$pid]['total'] += $amt;
     $catData[$pid]['months'][$ym] = ($catData[$pid]['months'][$ym] ?? 0.0) + $amt;
+    $monthlyTotals[$ym] = ($monthlyTotals[$ym] ?? 0.0) + $amt;
 
     $sub = $r['sub_name'] ?? '';
     if ($sub !== '' && $sub !== null) {
@@ -195,9 +202,7 @@ if (($_GET['export'] ?? '') === 'csv') {
     }
     $totRow = ['Total'];
     foreach ($allMonths as $ym) {
-        $mo = 0.0;
-        foreach ($catData as $cat) $mo += $cat['months'][$ym] ?? 0.0;
-        $totRow[] = number_format($mo, 2, '.', '');
+        $totRow[] = number_format($monthlyTotals[$ym] ?? 0.0, 2, '.', '');
     }
     $totRow[] = number_format($grandTotal, 2, '.', '');
     $totRow[] = number_format($monthlyAvg, 2, '.', '');
@@ -412,8 +417,9 @@ include __DIR__ . '/../includes/header.php';
               <summary class="cursor-pointer"><?= h($cat['name']) ?></summary>
               <div class="ps-3 pt-1">
                 <?php
-                arsort($cat['subs']);
-                foreach ($cat['subs'] as $sname => $samt):
+                $subs = $cat['subs'];
+                arsort($subs);
+                foreach ($subs as $sname => $samt):
                 ?>
                 <div class="d-flex justify-content-between small text-muted py-1 border-bottom">
                   <span><?= h($sname) ?></span>
@@ -443,8 +449,7 @@ include __DIR__ . '/../includes/header.php';
         <tr class="fw-bold">
           <td>Total</td>
           <?php foreach ($allMonths as $ym):
-            $mo = 0.0;
-            foreach ($catData as $cat) $mo += $cat['months'][$ym] ?? 0.0;
+            $mo = $monthlyTotals[$ym] ?? 0.0;
           ?>
           <td class="text-end <?= $mo > 0 ? 'amount-debit' : '' ?>">
             <?= $mo > 0 ? formatMoney($mo) : '—' ?>
