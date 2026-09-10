@@ -24,10 +24,12 @@ if ($group === 'month' && $endYear === $startYear && $endMonth < $startMonth) {
 }
 
 // ── Account filter (all types including investment) ────────────
+$showClosed = !empty($_GET['show_closed']);
+
 $allAccounts = $db->query(
-    "SELECT id, name, type, is_investment_cash, is_retirement, opening_balance
+    "SELECT id, name, type, is_investment_cash, is_retirement, opening_balance, is_closed
      FROM accounts
-     WHERE is_active = 1 AND is_closed = 0 AND is_investment_cash = 0
+     WHERE is_active = 1 AND is_investment_cash = 0" . (!$showClosed ? " AND is_closed = 0" : "") . "
      ORDER BY CASE WHEN type = 'Investment' AND is_retirement = 1 THEN 'Retirement' ELSE type END, name"
 )->fetchAll();
 
@@ -391,6 +393,14 @@ include __DIR__ . '/../includes/header.php';
             <strong>All Accounts</strong>
           </label>
         </li>
+        <li>
+          <label class="dropdown-item d-flex gap-2 align-items-center">
+            <input type="checkbox" id="abhShowClosed" name="show_closed" value="1"
+                   <?= $showClosed ? 'checked' : '' ?>
+                   onchange="document.getElementById('abhForm').submit()">
+            <span class="text-muted">Include Closed Accounts</span>
+          </label>
+        </li>
         <li><hr class="dropdown-divider my-1"></li>
         <?php
         $prevDispType = '';
@@ -407,12 +417,15 @@ include __DIR__ . '/../includes/header.php';
         </li>
         <?php endif; ?>
         <li>
-          <label class="dropdown-item d-flex gap-2 align-items-center py-1">
+          <label class="dropdown-item d-flex gap-2 align-items-center py-1 <?= !empty($a['is_closed']) ? 'text-muted' : '' ?>">
             <input type="checkbox" class="abh-acct-chk" value="<?= (int)$a['id'] ?>"
                    data-name="<?= h($a['name']) ?>"
                    data-type="<?= h($dispType) ?>"
                    <?= in_array((int)$a['id'], $selectedAcctIds, true) ? 'checked' : '' ?>>
             <?= h($a['name']) ?>
+            <?php if (!empty($a['is_closed'])): ?>
+            <span class="badge bg-secondary ms-1" style="font-size:.65rem">CLOSED</span>
+            <?php endif; ?>
           </label>
         </li>
         <?php endforeach; ?>

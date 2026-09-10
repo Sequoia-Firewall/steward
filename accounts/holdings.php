@@ -13,7 +13,13 @@ if (!$account || !isInvestLike($account['type']) || $account['is_investment_cash
 
 $db = getDB();
 
-// Per-account holdings with average cost basis
+// ── As-of date ───────────────────────────────────────────────────
+$today = date('Y-m-d');
+$rawDate = trim($_GET['as_of'] ?? '');
+$asOf = ($rawDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate)) ? $rawDate : $today;
+$isHistorical = ($asOf < $today);
+
+// Per-account holdings with average cost basis, as of $asOf
 $stmt = $db->prepare(
     'SELECT
         i.id,
@@ -30,15 +36,15 @@ $stmt = $db->prepare(
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
      JOIN investments   i ON i.id = it.investment_id
-     WHERE t.account_id = ? AND i.is_active = 1
+     WHERE t.account_id = ? AND i.is_active = 1 AND t.transaction_date <= ?
      GROUP BY i.id, i.name, i.symbol, i.type
      HAVING net_quantity > 0.000001
      ORDER BY i.name'
 );
-$stmt->execute([$id]);
+$stmt->execute([$id, $asOf]);
 $rawHoldings = $stmt->fetchAll();
 
-$latestPrices = getLatestInvestmentPrices();
+$latestPrices = $isHistorical ? getInvestmentPricesAsOf($asOf) : getLatestInvestmentPrices();
 
 // Build display rows + totals
 $rows             = [];
@@ -117,12 +123,12 @@ const HOLDINGS_ACCT  = <?= json_encode($account['name']) ?>;
     <?php endif; ?>
   </h2>
   <div class="d-flex gap-2">
-    <?php if (canEdit()): ?>
+    <?php if (canEdit() && !$isHistorical): ?>
     <button class="btn btn-outline-secondary btn-sm" onclick="openReconcileUpload()">
       <i class="bi bi-file-earmark-spreadsheet"></i> Reconcile with Statement
     </button>
     <?php endif; ?>
-    <?php if (canEdit() && !empty($rows)): ?>
+    <?php if (canEdit() && !$isHistorical && !empty($rows)): ?>
     <button class="btn btn-outline-secondary btn-sm" onclick="openManualReconcile()">
       <i class="bi bi-pencil-square"></i> Manual Reconcile
     </button>
@@ -140,6 +146,27 @@ const HOLDINGS_ACCT  = <?= json_encode($account['name']) ?>;
     </a>
   </div>
 </div>
+
+<form method="get" class="report-filters mb-3">
+  <input type="hidden" name="id" value="<?= $id ?>">
+  <div class="filter-group">
+    <label class="ab-asof-label" for="as_of"><i class="bi bi-calendar3"></i> As of</label>
+    <input type="date" id="as_of" name="as_of"
+           class="form-control form-control-sm ab-asof-input"
+           value="<?= h($asOf) ?>" max="<?= $today ?>">
+  </div>
+  <div class="filter-group filter-group-btns">
+    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+    <?php if ($asOf !== $today): ?>
+    <a href="?id=<?= $id ?>" class="btn btn-sm btn-outline-secondary">Today</a>
+    <?php endif; ?>
+  </div>
+</form>
+<?php if ($isHistorical): ?>
+<div class="mb-3">
+  <span class="ab-asof-badge"><i class="bi bi-clock-history"></i> Historical view: <?= h(date('M j, Y', strtotime($asOf))) ?> — editing disabled</span>
+</div>
+<?php endif; ?>
 
 <?php if (empty($rows)): ?>
 <div class="dash-section">
@@ -418,7 +445,7 @@ function csvCell(v) {
 
 <?php endif; ?>
 
-<?php if (canEdit()): ?>
+<?php if (canEdit() && !$isHistorical): ?>
 <!-- ── Reconcile: Upload Modal ─────────────────────────────── -->
 <div class="modal fade" id="reconcileUploadModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:420px">
@@ -860,7 +887,7 @@ function esc(s) {
 </script>
 <?php endif; ?>
 
-<?php if (canEdit() && !empty($rows)): ?>
+<?php if (canEdit() && !$isHistorical && !empty($rows)): ?>
 <!-- ── Adjust Holdings Modal ────────────────────────────────── -->
 <div class="modal fade" id="adjustHoldingModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:420px">

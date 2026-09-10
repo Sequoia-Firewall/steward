@@ -738,6 +738,35 @@ function getLatestInvestmentPrices(bool $forceRefresh = false): array {
     return $cache = $prices;
 }
 
+// Latest close price per investment on or before $asOf. Unlike getLatestInvestmentPrices()
+// this is not memoized — callers pass a specific historical date, not "now".
+function getInvestmentPricesAsOf(string $asOf): array {
+    try {
+        $stmt = getDB()->prepare(
+            'SELECT investment_id, close_price, price_date
+             FROM (
+                 SELECT investment_id, close_price, price_date,
+                        ROW_NUMBER() OVER (PARTITION BY investment_id ORDER BY price_date DESC) AS rn
+                 FROM investment_prices
+                 WHERE price_date <= ?
+             ) ranked
+             WHERE rn = 1'
+        );
+        $stmt->execute([$asOf]);
+        $rows = $stmt->fetchAll();
+    } catch (Exception $e) {
+        return [];
+    }
+    $prices = [];
+    foreach ($rows as $row) {
+        $prices[(int)$row['investment_id']] = [
+            'price'      => (float)$row['close_price'],
+            'price_date' => $row['price_date'],
+        ];
+    }
+    return $prices;
+}
+
 function getInvestmentCostBases(): array {
     try {
         $rows = getDB()->query(
