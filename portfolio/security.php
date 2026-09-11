@@ -33,7 +33,7 @@ $symbol  = $inv['symbol'] ?? '';
 
 // All transactions for this investment across all accounts, oldest first
 $txnStmt = $db->prepare(
-    'SELECT t.id, t.transaction_date, t.payee, t.memo, t.cleared_status,
+    'SELECT t.id, t.transaction_date, t.payee, t.memo, t.cleared_status, t.amount,
             it.activity, it.quantity, it.price AS inv_price, it.commission,
             a.id AS account_id, a.name AS account_name
      FROM investment_transactions it
@@ -53,6 +53,8 @@ $actLabels = [
     'split'        => 'Split',
     'reinvest_div' => 'Reinvest Div',
     'reinvest_cap' => 'Reinvest Cap',
+    'div'          => 'Dividend',
+    'int'          => 'Interest',
 ];
 
 // Use the same functions as portfolio/index for consistency (handles splits, investment cash filter)
@@ -121,6 +123,7 @@ const SEC_TRANSACTIONS = <?= json_encode(array_map(fn($t) => [
     'qty'        => (float)($t['quantity']   ?? 0),
     'price'      => (float)($t['inv_price']  ?? 0),
     'commission' => (float)($t['commission'] ?? 0),
+    'amount'     => (float)($t['amount']     ?? 0),
     'memo'       => $t['memo'] ?? '',
     'cleared'    => $t['cleared_status'] ?? '',
 ], $transactions)) ?>;
@@ -239,8 +242,9 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
           $acctId   = (int)$txn['account_id'];
 
           $total = 0.0;
-          if ($activity === 'buy')  $total = $qty * $price + $comm;
-          if ($activity === 'sell') $total = max(0.0, $qty * $price - $comm);
+          if ($activity === 'buy')                            $total = $qty * $price + $comm;
+          elseif ($activity === 'sell')                       $total = max(0.0, $qty * $price - $comm);
+          elseif ($activity === 'div' || $activity === 'int') $total = abs((float)($txn['amount'] ?? 0));
 
           $actLabel = $actLabels[$activity] ?? ucfirst($activity);
 
@@ -502,6 +506,8 @@ function exportSecurityCSV() {
     split:        'Split',
     reinvest_div: 'Reinvest Div',
     reinvest_cap: 'Reinvest Cap',
+    div:          'Dividend',
+    int:          'Interest',
   };
 
   const cols = ['Date','Account','Activity','Shares','Price/Share','Commission','Total','Cleared','Memo'];
@@ -514,6 +520,7 @@ function exportSecurityCSV() {
     let   total  = '';
     if (t.activity === 'buy')  total = qty * price + comm;
     if (t.activity === 'sell') total = Math.max(0, qty * price - comm);
+    if (t.activity === 'div' || t.activity === 'int') total = Math.abs(t.amount);
 
     lines.push([
       t.date,

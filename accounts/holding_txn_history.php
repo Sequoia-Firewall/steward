@@ -25,6 +25,7 @@ $stmt = $db->prepare(
     'SELECT
         t.transaction_date AS date,
         t.memo,
+        t.amount,
         it.activity,
         it.quantity,
         it.price,
@@ -45,6 +46,7 @@ foreach ($rows as $r) {
         'quantity'   => (float)$r['quantity'],
         'price'      => (float)$r['price'],
         'commission' => (float)$r['commission'],
+        'amount'     => (float)$r['amount'],
         'memo'       => $r['memo'],
     ];
 }

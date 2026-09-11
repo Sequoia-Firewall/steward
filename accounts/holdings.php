@@ -1055,6 +1055,8 @@ async function saveAdjustment() {
     split:        'Split',
     reinvest_div: 'Reinvest Div.',
     reinvest_cap: 'Reinvest Cap Gain',
+    div:          'Dividend',
+    int:          'Interest',
   };
 
   document.addEventListener('click', e => {
@@ -1105,9 +1107,11 @@ async function saveAdjustment() {
 
     let totalShares = 0, totalCost = 0;
 
+    const isIncome = a => ['div','int'].includes(a);
+
     const rows = txns.map(t => {
       const qty   = t.quantity;
-      const total = qty * t.price + t.commission;
+      const total = isIncome(t.activity) ? Math.abs(t.amount) : qty * t.price + t.commission;
       const sign  = isSell(t.activity) ? -1 : 1;
       totalShares += sign * qty;
       if (isBuy(t.activity))  totalCost += total;
@@ -1124,7 +1128,7 @@ async function saveAdjustment() {
         <td class="text-end">${sellMark}${shareStr}</td>
         <td class="text-end">${t.price > 0 ? fmtMoney(t.price) : '<span class="text-muted">—</span>'}</td>
         <td class="text-end">${t.commission > 0 ? fmtMoney(t.commission) : '<span class="text-muted">—</span>'}</td>
-        <td class="text-end">${sellMark}${fmtMoney(t.price * qty + t.commission)}</td>
+        <td class="text-end">${sellMark}${fmtMoney(total)}</td>
         <td class="text-muted small">${thEsc(t.memo || '')}</td>
       </tr>`;
     });

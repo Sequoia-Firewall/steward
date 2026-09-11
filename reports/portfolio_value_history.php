@@ -66,13 +66,13 @@ $stmt2 = $db->prepare(
         a.name AS acct_name,
         MIN(t.transaction_date) AS first_date,
         COALESCE(SUM(CASE
-            WHEN it.activity IN ('buy','add','split') THEN  it.quantity
-            WHEN it.activity IN ('sell','remove')     THEN -it.quantity
+            WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
+            WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
             ELSE 0
         END), 0) AS net_qty,
-        SUM(CASE WHEN it.activity IN ('buy','add')
+        SUM(CASE WHEN it.activity IN ('buy','add','reinvest_div','reinvest_cap')
             THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost,
-        SUM(CASE WHEN it.activity IN ('buy','add','split')
+        SUM(CASE WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap')
             THEN it.quantity ELSE 0 END) AS buy_qty
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
@@ -140,7 +140,7 @@ if (!empty($allTxns)) {
             $qty = (float)$t['quantity'];
             $act = $t['activity'];
             if (!isset($sharesHeld[$k])) $sharesHeld[$k] = 0.0;
-            if (in_array($act, ['buy', 'add'])) {
+            if (in_array($act, ['buy', 'add', 'reinvest_div', 'reinvest_cap'])) {
                 $sharesHeld[$k] += $qty;
                 $cumCostBasis   += $qty * (float)$t['price'] + (float)$t['commission'];
             } elseif (in_array($act, ['sell', 'remove'])) {
