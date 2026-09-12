@@ -767,27 +767,94 @@ function getInvestmentPricesAsOf(string $asOf): array {
     return $prices;
 }
 
-function getInvestmentCostBases(): array {
+// Chronological per-account cost-basis replay: walks each (investment, account)'s
+// transactions in date order and re-bases cost basis proportionally on every sale
+// (removes avg-cost-per-share-at-that-time × shares sold), instead of a lifetime
+// SUM($ bought)/SUM(shares bought) average. This matters whenever a position is
+// sold down and later repurchased at a different price — a naive average blends
+// in the cost of shares no longer held. $asOf limits the replay to transactions
+// on or before that date, for historical/point-in-time callers.
+function _investmentCostBasisPools(?string $asOf = null): array {
+    $where  = ['a.is_investment_cash = 0'];
+    $params = [];
+    if ($asOf !== null) { $where[] = 't.transaction_date <= ?'; $params[] = $asOf; }
+
     try {
-        $rows = getDB()->query(
-            'SELECT it.investment_id,
-                    SUM(CASE WHEN it.activity IN (\'buy\',\'add\',\'split\',\'reinvest_div\',\'reinvest_cap\') THEN it.quantity                           ELSE 0 END) AS buy_qty,
-                    SUM(CASE WHEN it.activity IN (\'buy\',\'add\',\'reinvest_div\',\'reinvest_cap\')        THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost
+        $stmt = getDB()->prepare(
+            'SELECT it.investment_id, t.account_id, t.transaction_date, it.activity,
+                    it.quantity, it.price, it.commission
              FROM investment_transactions it
              JOIN transactions t ON t.id = it.transaction_id
              JOIN accounts a     ON a.id = t.account_id
-             WHERE a.is_investment_cash = 0
-             GROUP BY it.investment_id'
-        )->fetchAll();
+             WHERE ' . implode(' AND ', $where) . '
+             ORDER BY it.investment_id, t.account_id, t.transaction_date, it.id'
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
     } catch (Exception $e) {
         return [];
     }
+
+    $pools = []; // "invId:acctId" -> ['investment_id'=>,'account_id'=>,'qty'=>,'cost'=>]
+    foreach ($rows as $r) {
+        $key = $r['investment_id'] . ':' . $r['account_id'];
+        if (!isset($pools[$key])) {
+            $pools[$key] = [
+                'investment_id' => (int)$r['investment_id'],
+                'account_id'    => (int)$r['account_id'],
+                'qty'           => 0.0,
+                'cost'          => 0.0,
+            ];
+        }
+        $qty = (float)$r['quantity'];
+        switch ($r['activity']) {
+            case 'buy': case 'add': case 'reinvest_div': case 'reinvest_cap':
+                $pools[$key]['qty']  += $qty;
+                $pools[$key]['cost'] += $qty * (float)$r['price'] + (float)$r['commission'];
+                break;
+            case 'split':
+                $pools[$key]['qty'] += $qty; // shares added, no cost — lowers avg cost/share
+                break;
+            case 'sell': case 'remove':
+                if ($pools[$key]['qty'] > 0.000001) {
+                    $avgCost = $pools[$key]['cost'] / $pools[$key]['qty'];
+                    $pools[$key]['cost'] -= $avgCost * $qty;
+                }
+                $pools[$key]['qty'] -= $qty;
+                break;
+            // div/int: income, no share/cost effect
+        }
+    }
+    return $pools;
+}
+
+function getInvestmentCostBases(): array {
+    $agg = []; // investment_id -> ['qty'=>,'cost'=>]
+    foreach (_investmentCostBasisPools() as $p) {
+        $iid = $p['investment_id'];
+        if (!isset($agg[$iid])) $agg[$iid] = ['qty' => 0.0, 'cost' => 0.0];
+        $agg[$iid]['qty']  += $p['qty'];
+        $agg[$iid]['cost'] += $p['cost'];
+    }
     $bases = [];
-    foreach ($rows as $row) {
-        $buyQty = (float)$row['buy_qty'];
-        $bases[(int)$row['investment_id']] = [
-            'avg_cost' => $buyQty > 0 ? (float)$row['buy_cost'] / $buyQty : 0.0,
-            'buy_cost' => (float)$row['buy_cost'],
+    foreach ($agg as $iid => $v) {
+        $bases[$iid] = [
+            'avg_cost' => $v['qty'] > 0.000001 ? $v['cost'] / $v['qty'] : 0.0,
+            'buy_cost' => $v['cost'],
+        ];
+    }
+    return $bases;
+}
+
+// Same replay as getInvestmentCostBases(), broken out per (investment, account)
+// pair — for reports that show one row per holding-per-account and need the
+// correct basis without an N+1 query per account. Keyed "investmentId:accountId".
+function getInvestmentCostBasesByAccount(?string $asOf = null): array {
+    $bases = [];
+    foreach (_investmentCostBasisPools($asOf) as $key => $p) {
+        $bases[$key] = [
+            'avg_cost' => $p['qty'] > 0.000001 ? $p['cost'] / $p['qty'] : 0.0,
+            'buy_cost' => $p['cost'],
         ];
     }
     return $bases;

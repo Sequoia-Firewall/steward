@@ -63,24 +63,20 @@ if ($acctFilter) { $holdWhere .= " AND a.id = ?"; $holdParams[] = $acctFilter; }
 $stmt2 = $db->prepare(
     "SELECT
         i.id AS inv_id, i.name AS inv_name, i.symbol, i.type AS inv_type,
-        a.name AS acct_name,
+        a.id AS acct_id, a.name AS acct_name,
         MIN(t.transaction_date) AS first_date,
         COALESCE(SUM(CASE
             WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
             WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
             ELSE 0
-        END), 0) AS net_qty,
-        SUM(CASE WHEN it.activity IN ('buy','add','reinvest_div','reinvest_cap')
-            THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost,
-        SUM(CASE WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap')
-            THEN it.quantity ELSE 0 END) AS buy_qty
+        END), 0) AS net_qty
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
      JOIN investments   i ON i.id = it.investment_id
      JOIN accounts      a ON a.id = t.account_id
      WHERE a.is_investment_cash = 0 AND i.is_active = 1
        $acctWhere
-     GROUP BY i.id, i.name, i.symbol, i.type, a.name
+     GROUP BY i.id, i.name, i.symbol, i.type, a.id, a.name
      HAVING net_qty > 0.000001
      ORDER BY i.name, a.name"
 );
@@ -178,6 +174,11 @@ if (!empty($allTxns)) {
 
 // ── Holdings table rows ────────────────────────────────────────
 $latestPrices    = getLatestInvestmentPrices();
+// Chronological per-account replay — correctly re-bases cost basis after each
+// sale, unlike a lifetime SUM($ bought)/SUM(shares bought) average. (The "Amount
+// Invested" chart line above is a separate, intentionally cumulative metric and
+// is not affected by this.)
+$costBases       = getInvestmentCostBasesByAccount();
 $today           = date('Y-m-d');
 $tableRows       = [];
 $totalCostBasis  = 0.0;
@@ -185,11 +186,10 @@ $totalCurrentVal = 0.0;
 
 foreach ($holdingRows as $r) {
     $invId     = (int)$r['inv_id'];
+    $acctId    = (int)$r['acct_id'];
     $qty       = (float)$r['net_qty'];
-    $buyQty    = (float)$r['buy_qty'];
-    $buyCost   = (float)$r['buy_cost'];
-    $avgCost   = $buyQty > 0 ? $buyCost / $buyQty : 0.0;
-    $costBasis = $avgCost * $qty;
+    $cb        = $costBases["$invId:$acctId"] ?? ['buy_cost' => 0.0];
+    $costBasis = $cb['buy_cost'];
 
     $price      = $latestPrices[$invId]['price'] ?? null;
     $currentVal = $price !== null ? $price * $qty : null;

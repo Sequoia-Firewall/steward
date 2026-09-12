@@ -54,11 +54,7 @@ $stmt = $db->prepare(
             WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
             WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
             ELSE 0
-        END), 0) AS net_qty,
-        SUM(CASE WHEN it.activity IN ('buy','add','reinvest_div','reinvest_cap')
-            THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost,
-        SUM(CASE WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap')
-            THEN it.quantity ELSE 0 END) AS buy_qty
+        END), 0) AS net_qty
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
      JOIN investments   i ON i.id = it.investment_id
@@ -73,6 +69,9 @@ $stmt->execute($acctParams);
 $rawRows = $stmt->fetchAll();
 
 $latestPrices = getLatestInvestmentPrices();
+// Chronological per-account replay — correctly re-bases cost basis after each
+// sale, unlike a lifetime SUM($ bought)/SUM(shares bought) average.
+$costBases = getInvestmentCostBasesByAccount();
 
 // ── Build display rows ─────────────────────────────────────────
 $rows              = [];
@@ -83,11 +82,11 @@ $anyMissingPrice   = false;
 
 foreach ($rawRows as $r) {
     $invId     = (int)$r['inv_id'];
+    $acctId    = (int)$r['acct_id'];
     $qty       = (float)$r['net_qty'];
-    $buyQty    = (float)$r['buy_qty'];
-    $buyCost   = (float)$r['buy_cost'];
-    $avgCost   = $buyQty > 0 ? $buyCost / $buyQty : 0.0;
-    $costBasis = $avgCost * $qty;
+    $cb        = $costBases["$invId:$acctId"] ?? ['buy_cost' => 0.0];
+    $costBasis = $cb['buy_cost'];
+    $avgCost   = $qty > 0.000001 ? $costBasis / $qty : 0.0;
 
     $price       = $latestPrices[$invId]['price']      ?? null;
     $priceDate   = $latestPrices[$invId]['price_date'] ?? null;
