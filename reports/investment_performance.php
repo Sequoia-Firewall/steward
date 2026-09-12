@@ -63,30 +63,6 @@ if ($idxParam === '') {
 
 $allSelectedIds = array_merge($selectedInvIds, $selectedIdxIds);
 
-// ── Fetch price history ─────────────────────────────────────────
-$rawPrices = [];
-$allDates  = [];
-
-if (!empty($allSelectedIds)) {
-    $ph     = implode(',', array_fill(0, count($allSelectedIds), '?'));
-    $params = array_merge($allSelectedIds, [$fromDate, $toDate]);
-    $stmt   = $db->prepare(
-        "SELECT investment_id, price_date, close_price
-         FROM investment_prices
-         WHERE investment_id IN ($ph)
-           AND price_date BETWEEN ? AND ?
-         ORDER BY investment_id, price_date"
-    );
-    $stmt->execute($params);
-    foreach ($stmt->fetchAll() as $p) {
-        $rawPrices[(int)$p['investment_id']][$p['price_date']] = (float)$p['close_price'];
-        $allDates[$p['price_date']] = true;
-    }
-    ksort($allDates);
-}
-
-$dates = array_keys($allDates);
-
 // ── Metadata map ────────────────────────────────────────────────
 $invMeta = [];
 foreach (array_merge($allInvestments, $allIndexes) as $inv) {
@@ -100,11 +76,19 @@ $palette = [
     '#865e3c', '#3584e4',
 ];
 
+$perf  = getInvestmentPerformanceSeries($allSelectedIds, $fromDate, $toDate);
+$dates = $perf['dates'];
+
+// Cost & Profit Analysis + Total Return overlay data — securities only (indexes
+// aren't "held", so they have no cost basis/distributions to fold in).
+$cpa = getInvestmentCostProfitAnalysis($selectedInvIds, $fromDate, $toDate);
+
 $seriesData = [];
 $colorIdx   = 0;
 
 foreach ($allSelectedIds as $id) {
-    if (!isset($rawPrices[$id])) continue;
+    $s = $perf['series'][$id] ?? null;
+    if ($s === null) continue;
 
     $meta    = $invMeta[$id] ?? ['name' => "Investment $id", 'symbol' => '', 'type' => ''];
     $label   = $meta['symbol'] ?: $meta['name'];
@@ -112,47 +96,26 @@ foreach ($allSelectedIds as $id) {
     $color   = $palette[$colorIdx % count($palette)];
     $colorIdx++;
 
-    $lastPrice = null;
-    $basePrice = null;
-    $firstDate = null;
-    $lastDate  = null;
-    $values    = [];
-
-    foreach ($dates as $date) {
-        if (isset($rawPrices[$id][$date])) {
-            $lastPrice = $rawPrices[$id][$date];
-            if ($firstDate === null) $firstDate = $date;
-            $lastDate = $date;
-        }
-        if ($lastPrice !== null) {
-            if ($basePrice === null) $basePrice = $lastPrice;
-            $values[] = round(($lastPrice / $basePrice - 1) * 100, 4);
-        } else {
-            $values[] = null;
-        }
+    $totalReturnValues = null;
+    if (!$isIndex && isset($cpa[$id])) {
+        $totalReturnValues = investmentTotalReturnOverlay($dates, $s['values'], $s['basePrice'], $cpa[$id]['distributions']);
     }
 
-    if ($basePrice === null) continue;
-
-    $periodReturn = round(($lastPrice / $basePrice - 1) * 100, 2);
-    $days         = max(1, (int)((strtotime($lastDate) - strtotime($firstDate)) / 86400));
-    $years        = $days / 365.25;
-    $annualReturn = $years >= (1 / 12) ? round((pow($lastPrice / $basePrice, 1 / $years) - 1) * 100, 2) : null;
-
     $seriesData[] = [
-        'id'           => $id,
-        'label'        => $label,
-        'fullName'     => $meta['name'],
-        'symbol'       => $meta['symbol'],
-        'isIndex'      => $isIndex,
-        'color'        => $color,
-        'values'       => $values,
-        'firstDate'    => $firstDate,
-        'lastDate'     => $lastDate,
-        'basePrice'    => $basePrice,
-        'lastPrice'    => $lastPrice,
-        'periodReturn' => $periodReturn,
-        'annualReturn' => $annualReturn,
+        'id'                => $id,
+        'label'             => $label,
+        'fullName'          => $meta['name'],
+        'symbol'            => $meta['symbol'],
+        'isIndex'           => $isIndex,
+        'color'             => $color,
+        'values'            => $s['values'],
+        'totalReturnValues' => $totalReturnValues,
+        'firstDate'         => $s['firstDate'],
+        'lastDate'          => $s['lastDate'],
+        'basePrice'         => $s['basePrice'],
+        'lastPrice'         => $s['lastPrice'],
+        'periodReturn'      => $s['periodReturn'],
+        'annualReturn'      => $s['annualReturn'],
     ];
 }
 
@@ -273,6 +236,12 @@ include __DIR__ . '/../includes/header.php';
   <button type="button" class="btn btn-xs btn-outline-secondary date-preset" data-months="12">1Y</button>
   <button type="button" class="btn btn-xs btn-outline-secondary date-preset" data-months="24">2Y</button>
   <button type="button" class="btn btn-xs btn-outline-secondary date-preset" data-months="60">5Y</button>
+  <?php if (!empty(array_filter($seriesData, fn($s) => $s['totalReturnValues'] !== null))): ?>
+  <label class="ms-2 small d-flex align-items-center gap-1" style="cursor:pointer">
+    <input type="checkbox" id="includeDividends" class="form-check-input mt-0">
+    Include Dividends
+  </label>
+  <?php endif; ?>
 </div>
 
 <?php if (empty($allSelectedIds)): ?>
@@ -341,14 +310,88 @@ include __DIR__ . '/../includes/header.php';
   </tbody>
 </table>
 
+<?php if (!empty($cpa)): ?>
+<h3 class="report-section-title mt-4">Cost &amp; Profit Analysis</h3>
+<p class="text-muted small">
+  For securities currently held as of <?= formatDate($toDate) ?>. Total Profit and Total Return %
+  are approximations for this date range — they divide the change in unrealized gain/loss plus
+  distributions received by the <em>average</em> of the start- and end-of-period cost basis, not a
+  true money-weighted return. Realized gains from sales during this period aren't included here.
+</p>
+<table class="table table-sm report-table">
+  <thead>
+    <tr>
+      <th>Security</th>
+      <th class="text-end">Shares</th>
+      <th class="text-end">Avg Cost</th>
+      <th class="text-end">Cost Basis</th>
+      <th class="text-end">Market Value</th>
+      <th class="text-end">Unrealized G/L</th>
+      <th class="text-end">Div/Interest</th>
+      <th class="text-end">Reinvested</th>
+      <th class="text-end">Total Distrib.</th>
+      <th class="text-end">Total Profit</th>
+      <th class="text-end">Total Return</th>
+    </tr>
+  </thead>
+  <tbody>
+    <?php foreach ($cpa as $iid => $r):
+      $meta    = $invMeta[$iid] ?? ['name' => "Investment $iid", 'symbol' => ''];
+      $uglCls  = $r['unrealizedGainLoss'] !== null ? ($r['unrealizedGainLoss'] >= 0 ? 'amount-credit' : 'amount-debit') : '';
+      $tpCls   = $r['totalProfit']        !== null ? ($r['totalProfit']        >= 0 ? 'amount-credit' : 'amount-debit') : '';
+      $trCls   = $r['totalReturnPct']     !== null ? ($r['totalReturnPct']     >= 0 ? 'amount-credit' : 'amount-debit') : '';
+    ?>
+    <tr>
+      <td>
+        <?php if (!empty($r['distributions'])): ?>
+        <button type="button" class="btn btn-link p-0 cpa-dist-link" data-id="<?= $iid ?>">
+          <strong><?= h($meta['name']) ?></strong>
+        </button>
+        <?php else: ?>
+        <strong><?= h($meta['name']) ?></strong>
+        <?php endif; ?>
+        <?php if ($meta['symbol']): ?>
+        <span class="text-muted small ms-1"><?= h($meta['symbol']) ?></span>
+        <?php endif; ?>
+      </td>
+      <td class="text-end"><?= rtrim(rtrim(number_format($r['qty'], 6), '0'), '.') ?></td>
+      <td class="text-end"><?= $r['avgCost'] > 0 ? formatMoney($r['avgCost']) : '—' ?></td>
+      <td class="text-end"><?= formatMoney($r['costBasis']) ?></td>
+      <td class="text-end"><?= $r['marketValue'] !== null ? formatMoney($r['marketValue']) : '<span class="text-muted">—</span>' ?></td>
+      <td class="text-end <?= $uglCls ?>">
+        <?php if ($r['unrealizedGainLoss'] !== null): ?>
+          <?= ($r['unrealizedGainLoss'] >= 0 ? '+' : '-') . formatMoney(abs($r['unrealizedGainLoss'])) ?>
+        <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+      </td>
+      <td class="text-end"><?= $r['dividendsInterest'] > 0 ? formatMoney($r['dividendsInterest']) : '—' ?></td>
+      <td class="text-end"><?= $r['reinvestedDistributions'] > 0 ? formatMoney($r['reinvestedDistributions']) : '—' ?></td>
+      <td class="text-end"><?= $r['totalDistributions'] > 0 ? formatMoney($r['totalDistributions']) : '—' ?></td>
+      <td class="text-end <?= $tpCls ?>">
+        <?php if ($r['totalProfit'] !== null): ?>
+          <?= ($r['totalProfit'] >= 0 ? '+' : '-') . formatMoney(abs($r['totalProfit'])) ?>
+        <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+      </td>
+      <td class="text-end <?= $trCls ?>">
+        <?php if ($r['totalReturnPct'] !== null): ?>
+          <strong><?= ($r['totalReturnPct'] >= 0 ? '+' : '') . number_format($r['totalReturnPct'], 2) ?>%</strong>
+        <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+      </td>
+    </tr>
+    <?php endforeach; ?>
+  </tbody>
+</table>
+<?php endif; ?>
+
 <?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <?php if (!empty($seriesData)): ?>
 <script>
 (function(){
-  const labels   = <?= json_encode(array_map(fn($d) => date('M j, Y', strtotime($d)), $dates)) ?>;
-  const datasets = <?= json_encode(array_map(fn($s) => [
+  const labels     = <?= json_encode(array_map(fn($d) => date('M j, Y', strtotime($d)), $dates)) ?>;
+  const priceData  = <?= json_encode(array_map(fn($s) => $s['values'],            $seriesData)) ?>;
+  const totalData  = <?= json_encode(array_map(fn($s) => $s['totalReturnValues'], $seriesData)) ?>;
+  const datasets   = <?= json_encode(array_map(fn($s) => [
       'label'       => $s['label'],
       'data'        => $s['values'],
       'borderColor' => $s['color'],
@@ -360,7 +403,7 @@ include __DIR__ . '/../includes/header.php';
       'spanGaps'    => true,
   ], $seriesData)) ?>;
 
-  new Chart(document.getElementById('perfChart'), {
+  const perfChart = new Chart(document.getElementById('perfChart'), {
     type: 'line',
     data: { labels, datasets },
     options: {
@@ -394,6 +437,16 @@ include __DIR__ . '/../includes/header.php';
       }
     }
   });
+
+  const divChk = document.getElementById('includeDividends');
+  if (divChk) {
+    divChk.addEventListener('change', () => {
+      perfChart.data.datasets.forEach((ds, i) => {
+        ds.data = (divChk.checked && totalData[i]) ? totalData[i] : priceData[i];
+      });
+      perfChart.update();
+    });
+  }
 })();
 </script>
 <?php endif; ?>
@@ -449,5 +502,52 @@ include __DIR__ . '/../includes/header.php';
   });
 })();
 </script>
+
+<?php if (!empty($cpa)): ?>
+<div class="modal fade" id="cpaDistModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cpaDistModalTitle">Distributions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Date</th><th>Type</th><th class="text-end">Amount</th></tr></thead>
+          <tbody id="cpaDistModalBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const CPA_BY_ID = <?= json_encode(array_combine(
+      array_map('strval', array_keys($cpa)),
+      array_map(fn($iid) => [
+          'name'   => $invMeta[$iid]['name']   ?? '',
+          'symbol' => $invMeta[$iid]['symbol'] ?? '',
+          'rows'   => $cpa[$iid]['distributions'],
+      ], array_keys($cpa))
+  )) ?>;
+  const DIST_LABELS = { div: 'Dividend', int: 'Interest', reinvest_div: 'Reinvest Div.', reinvest_cap: 'Reinvest Cap Gain' };
+
+  document.querySelectorAll('.cpa-dist-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const data = CPA_BY_ID[btn.dataset.id];
+      if (!data) return;
+      document.getElementById('cpaDistModalTitle').textContent =
+        data.name + (data.symbol ? ' (' + data.symbol + ')' : '') + ' — Distributions';
+      document.getElementById('cpaDistModalBody').innerHTML = data.rows.map(r => {
+        const [y, m, d] = r.date.split('-');
+        return '<tr><td>' + m + '/' + d + '/' + y + '</td><td>' + (DIST_LABELS[r.activity] || r.activity) +
+               '</td><td class="text-end">' + r.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) + '</td></tr>';
+      }).join('');
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('cpaDistModal')).show();
+    });
+  });
+})();
+</script>
+<?php endif; ?>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

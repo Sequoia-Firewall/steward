@@ -828,14 +828,21 @@ function _investmentCostBasisPools(?string $asOf = null): array {
     return $pools;
 }
 
-function getInvestmentCostBases(): array {
-    $agg = []; // investment_id -> ['qty'=>,'cost'=>]
-    foreach (_investmentCostBasisPools() as $p) {
+// Sums per-account pools (from _investmentCostBasisPools()) up to one qty/cost
+// total per investment_id, across all its accounts.
+function _aggregatePoolsByInvestment(array $pools): array {
+    $agg = [];
+    foreach ($pools as $p) {
         $iid = $p['investment_id'];
         if (!isset($agg[$iid])) $agg[$iid] = ['qty' => 0.0, 'cost' => 0.0];
         $agg[$iid]['qty']  += $p['qty'];
         $agg[$iid]['cost'] += $p['cost'];
     }
+    return $agg;
+}
+
+function getInvestmentCostBases(): array {
+    $agg = _aggregatePoolsByInvestment(_investmentCostBasisPools());
     $bases = [];
     foreach ($agg as $iid => $v) {
         $bases[$iid] = [
@@ -858,6 +865,246 @@ function getInvestmentCostBasesByAccount(?string $asOf = null): array {
         ];
     }
     return $bases;
+}
+
+// Each id's most recent price on or before $asOf (not necessarily the latest
+// price overall) — same max-date-per-investment pattern as
+// getLatestInvestmentPrices(), with a date cutoff.
+function _investmentPricesAsOf(array $ids, string $asOf): array {
+    if (empty($ids)) return [];
+    try {
+        $db = getDB();
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $db->prepare(
+            "SELECT ip.investment_id, ip.close_price, ip.price_date
+             FROM investment_prices ip
+             JOIN (
+                 SELECT investment_id, MAX(price_date) AS mx
+                 FROM investment_prices
+                 WHERE investment_id IN ($ph) AND price_date <= ?
+                 GROUP BY investment_id
+             ) m ON m.investment_id = ip.investment_id AND m.mx = ip.price_date"
+        );
+        $stmt->execute(array_merge($ids, [$asOf]));
+        $rows = $stmt->fetchAll();
+    } catch (Exception $e) {
+        return [];
+    }
+    $out = [];
+    foreach ($rows as $r) {
+        $out[(int)$r['investment_id']] = [
+            'price'      => (float)$r['close_price'],
+            'price_date' => $r['price_date'],
+        ];
+    }
+    return $out;
+}
+
+// Builds a normalized % price-return series (rebased to 0% at each id's first
+// available price in range) for every id in $ids over [$fromDate, $toDate], plus
+// period and (once the range covers enough time) annualized return. Shared by
+// reports/investment_performance.php and the security page's Performance
+// Summary — both just add their own labels/colors on top of this.
+function getInvestmentPerformanceSeries(array $ids, string $fromDate, string $toDate): array {
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    $result = ['dates' => [], 'series' => []];
+    if (empty($ids)) return $result;
+
+    $db   = getDB();
+    $ph   = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $db->prepare(
+        "SELECT investment_id, price_date, close_price
+         FROM investment_prices
+         WHERE investment_id IN ($ph)
+           AND price_date BETWEEN ? AND ?
+         ORDER BY investment_id, price_date"
+    );
+    $stmt->execute(array_merge($ids, [$fromDate, $toDate]));
+
+    $rawPrices = [];
+    $allDates  = [];
+    foreach ($stmt->fetchAll() as $p) {
+        $rawPrices[(int)$p['investment_id']][$p['price_date']] = (float)$p['close_price'];
+        $allDates[$p['price_date']] = true;
+    }
+    ksort($allDates);
+    $dates = array_keys($allDates);
+    $result['dates'] = $dates;
+
+    foreach ($ids as $id) {
+        if (!isset($rawPrices[$id])) continue;
+
+        $lastPrice = null; $basePrice = null; $firstDate = null; $lastDate = null; $values = [];
+        foreach ($dates as $date) {
+            if (isset($rawPrices[$id][$date])) {
+                $lastPrice = $rawPrices[$id][$date];
+                if ($firstDate === null) $firstDate = $date;
+                $lastDate = $date;
+            }
+            if ($lastPrice !== null) {
+                if ($basePrice === null) $basePrice = $lastPrice;
+                $values[] = round(($lastPrice / $basePrice - 1) * 100, 4);
+            } else {
+                $values[] = null;
+            }
+        }
+        if ($basePrice === null) continue;
+
+        $periodReturn = round(($lastPrice / $basePrice - 1) * 100, 2);
+        $days         = max(1, (int)((strtotime($lastDate) - strtotime($firstDate)) / 86400));
+        $years        = $days / 365.25;
+        $annualReturn = $years >= (1 / 12) ? round((pow($lastPrice / $basePrice, 1 / $years) - 1) * 100, 2) : null;
+
+        $result['series'][$id] = [
+            'values'       => $values,
+            'firstDate'    => $firstDate,
+            'lastDate'     => $lastDate,
+            'basePrice'    => $basePrice,
+            'lastPrice'    => $lastPrice,
+            'periodReturn' => $periodReturn,
+            'annualReturn' => $annualReturn,
+        ];
+    }
+    return $result;
+}
+
+// Cost basis, market value, unrealized gain/loss, and distribution income for
+// each currently-held (as of $toDate) investment in $ids, over [$fromDate, $toDate].
+// "Currently held" and cost/market-value figures are point-in-time snapshots as of
+// $toDate; distributions are summed within the date range. Total Profit and Total
+// Return % are period-specific — they use the CHANGE in unrealized gain/loss across
+// the period (end snapshot minus start snapshot), not the full lifetime unrealized
+// gain, so a long-held position's pre-existing gains aren't misattributed to a short
+// report window. Return % divides by the AVERAGE of start- and end-of-period cost
+// basis (not just start), since using only the start balance badly overstates
+// return when a position grows a lot mid-period (small starting position + a big
+// later buy divides that buy's short-lived gain by a stale, tiny denominator).
+// This averaging is still an approximation, not a true money-weighted/XIRR return.
+// Realized gains from in-period sells are intentionally out of scope — this is
+// current-holdings analysis, not a full realized+unrealized reconciliation.
+function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $toDate): array {
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    if (empty($ids)) return [];
+
+    $dayBeforeFrom = date('Y-m-d', strtotime($fromDate . ' -1 day'));
+    $aggEnd   = _aggregatePoolsByInvestment(_investmentCostBasisPools($toDate));
+    $aggStart = _aggregatePoolsByInvestment(_investmentCostBasisPools($dayBeforeFrom));
+
+    $heldIds = array_values(array_filter($ids, fn($id) => ($aggEnd[$id]['qty'] ?? 0.0) > 0.000001));
+    if (empty($heldIds)) return [];
+
+    $priceEnd   = _investmentPricesAsOf($heldIds, $toDate);
+    $priceStart = _investmentPricesAsOf($heldIds, $dayBeforeFrom);
+
+    $db   = getDB();
+    $ph   = implode(',', array_fill(0, count($heldIds), '?'));
+    $distStmt = $db->prepare(
+        "SELECT it.investment_id, t.transaction_date, t.amount, it.activity,
+                it.quantity, it.price, it.commission
+         FROM investment_transactions it
+         JOIN transactions t ON t.id = it.transaction_id
+         JOIN accounts a     ON a.id = t.account_id
+         WHERE a.is_investment_cash = 0 AND it.investment_id IN ($ph)
+           AND it.activity IN ('div','int','reinvest_div','reinvest_cap')
+           AND t.transaction_date BETWEEN ? AND ?
+         ORDER BY it.investment_id, t.transaction_date, it.id"
+    );
+    $distStmt->execute(array_merge($heldIds, [$fromDate, $toDate]));
+
+    $distByInv = array_fill_keys($heldIds, []);
+    foreach ($distStmt->fetchAll() as $r) {
+        $iid        = (int)$r['investment_id'];
+        $isReinvest = in_array($r['activity'], ['reinvest_div', 'reinvest_cap'], true);
+        // Cash dividends/interest carry their $ amount on transactions.amount
+        // (quantity/price are 0); reinvestments carry it as quantity*price+commission.
+        $amount = $isReinvest
+            ? (float)$r['quantity'] * (float)$r['price'] + (float)$r['commission']
+            : abs((float)$r['amount']);
+        $distByInv[$iid][] = [
+            'date'       => $r['transaction_date'],
+            'activity'   => $r['activity'],
+            'reinvested' => $isReinvest,
+            'amount'     => $amount,
+        ];
+    }
+
+    $out = [];
+    foreach ($heldIds as $iid) {
+        $qty       = $aggEnd[$iid]['qty'];
+        $costBasis = $aggEnd[$iid]['cost'];
+        $avgCost   = $qty > 0.000001 ? $costBasis / $qty : 0.0;
+
+        $qtyStart       = $aggStart[$iid]['qty']  ?? 0.0;
+        $costBasisStart = $aggStart[$iid]['cost'] ?? 0.0;
+
+        $price        = $priceEnd[$iid]['price']      ?? null;
+        $priceDate    = $priceEnd[$iid]['price_date'] ?? null;
+        $priceAtStart = $priceStart[$iid]['price']    ?? null;
+
+        $marketValue      = $price !== null ? $price * $qty : null;
+        $marketValueStart = $qtyStart <= 0.000001
+            ? 0.0
+            : ($priceAtStart !== null ? $priceAtStart * $qtyStart : null);
+
+        $unrealizedGainLoss      = $marketValue      !== null ? $marketValue      - $costBasis      : null;
+        $unrealizedGainLossStart = $marketValueStart !== null ? $marketValueStart - $costBasisStart : null;
+        $periodGainLoss = ($unrealizedGainLoss !== null && $unrealizedGainLossStart !== null)
+            ? $unrealizedGainLoss - $unrealizedGainLossStart : null;
+
+        $dividendsInterest = 0.0;
+        $reinvestedDist    = 0.0;
+        foreach ($distByInv[$iid] as $d) {
+            if ($d['reinvested']) $reinvestedDist    += $d['amount'];
+            else                  $dividendsInterest += $d['amount'];
+        }
+        $totalDistributions = $dividendsInterest + $reinvestedDist;
+        $totalProfit = $periodGainLoss !== null ? $periodGainLoss + $totalDistributions : null;
+
+        $returnBase     = ($costBasisStart + $costBasis) / 2;
+        $totalReturnPct = ($totalProfit !== null && $returnBase > 0.000001)
+            ? ($totalProfit / $returnBase) * 100 : null;
+
+        $out[$iid] = [
+            'qty'                     => $qty,
+            'avgCost'                 => $avgCost,
+            'costBasis'               => $costBasis,
+            'price'                   => $price,
+            'priceDate'               => $priceDate,
+            'marketValue'             => $marketValue,
+            'unrealizedGainLoss'      => $unrealizedGainLoss,
+            'dividendsInterest'       => $dividendsInterest,
+            'reinvestedDistributions' => $reinvestedDist,
+            'totalDistributions'      => $totalDistributions,
+            'totalProfit'             => $totalProfit,
+            'totalReturnPct'          => $totalReturnPct,
+            'distributions'           => $distByInv[$iid],
+        ];
+    }
+    return $out;
+}
+
+// Builds a "Total Return" overlay for a getInvestmentPerformanceSeries() line:
+// adds cumulative distributions received (as a % of the series' base price) on
+// top of its existing normalized price-return values. A distribution dated
+// between two chart dates is attributed to the next chart date on or after it
+// (there's no price point to plot it at on its own exact date), same convention
+// used for the buy/sell markers on the security page's price chart.
+function investmentTotalReturnOverlay(array $dates, array $priceReturnValues, float $basePrice, array $distributions): array {
+    if ($basePrice <= 0.000001) return $priceReturnValues;
+    usort($distributions, fn($a, $b) => $a['date'] <=> $b['date']);
+
+    $out = [];
+    $cum = 0.0;
+    $di  = 0;
+    $n   = count($distributions);
+    foreach ($dates as $i => $date) {
+        while ($di < $n && $distributions[$di]['date'] <= $date) {
+            $cum += $distributions[$di]['amount'];
+            $di++;
+        }
+        $out[] = $priceReturnValues[$i] !== null ? $priceReturnValues[$i] + ($cum / $basePrice) * 100 : null;
+    }
+    return $out;
 }
 
 // ── Scheduled bills / deposits ─────────────────────────────────

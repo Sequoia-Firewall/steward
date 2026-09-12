@@ -97,6 +97,21 @@ foreach ($transactions as $txn) {
     ];
 }
 
+// ── Performance & Cost Analysis date range ──────────────────────
+$defaultPerfFrom = date('Y-m-d', strtotime('-1 year'));
+$defaultPerfTo   = date('Y-m-d');
+$perfFrom = $_GET['from'] ?? $defaultPerfFrom;
+$perfTo   = $_GET['to']   ?? $defaultPerfTo;
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $perfFrom)) $perfFrom = $defaultPerfFrom;
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $perfTo))   $perfTo   = $defaultPerfTo;
+if ($perfTo < $perfFrom) $perfTo = $perfFrom;
+
+// Same shared functions as reports/investment_performance.php, scoped to this
+// one security, so the numbers always match that report for the same range.
+$perfSeries = getInvestmentPerformanceSeries([$invId], $perfFrom, $perfTo);
+$perfRow    = $perfSeries['series'][$invId] ?? null;
+$cpaRow     = getInvestmentCostProfitAnalysis([$invId], $perfFrom, $perfTo)[$invId] ?? null;
+
 // Indices with price history — for the comparison dropdown in the price history modal
 $phIndicesStmt = $db->query(
     "SELECT id, name, symbol FROM investments
@@ -342,6 +357,143 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
   </div>
 </div>
 
+<!-- Performance & Cost Analysis -->
+<div class="dash-section">
+  <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+    <h4 class="section-title mb-0"><i class="bi bi-graph-up-arrow"></i> Performance &amp; Cost Analysis</h4>
+  </div>
+
+  <form method="get" class="report-filters mb-2" id="secPerfForm">
+    <input type="hidden" name="slug" value="<?= h($slug) ?>">
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" name="from" id="secPerfFrom" value="<?= h($perfFrom) ?>"
+             class="form-control form-control-sm" style="width:auto">
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" name="to" id="secPerfTo" value="<?= h($perfTo) ?>"
+             class="form-control form-control-sm" style="width:auto">
+    </div>
+    <div class="filter-group filter-group-btns">
+      <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+    </div>
+  </form>
+  <div class="mb-3 d-flex gap-1 flex-wrap align-items-center">
+    <span class="text-muted small me-1">Range:</span>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-months="1">1M</button>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-months="3">3M</button>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-months="6">6M</button>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-ytd="1">YTD</button>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-months="12">1Y</button>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-months="24">2Y</button>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-months="60">5Y</button>
+    <button type="button" class="btn btn-xs btn-outline-secondary sec-perf-preset" data-all="1">All</button>
+  </div>
+
+  <?php if ($perfRow === null): ?>
+  <p class="text-muted small">No price history in this date range.</p>
+  <?php else: ?>
+  <h5 class="report-section-title" style="font-size:.95rem">Performance Summary</h5>
+  <table class="table table-sm report-table mb-4">
+    <thead>
+      <tr>
+        <th class="text-end">Start Date</th><th class="text-end">Start Price</th>
+        <th class="text-end">End Date</th><th class="text-end">End Price</th>
+        <th class="text-end">Period Return</th><th class="text-end">Ann. Return</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php $rCls = $perfRow['periodReturn'] >= 0 ? 'amount-credit' : 'amount-debit';
+            $aCls = $perfRow['annualReturn'] !== null ? ($perfRow['annualReturn'] >= 0 ? 'amount-credit' : 'amount-debit') : ''; ?>
+      <tr>
+        <td class="text-end text-muted small"><?= formatDate($perfRow['firstDate']) ?></td>
+        <td class="text-end"><?= formatMoney($perfRow['basePrice']) ?></td>
+        <td class="text-end text-muted small"><?= formatDate($perfRow['lastDate']) ?></td>
+        <td class="text-end"><?= formatMoney($perfRow['lastPrice']) ?></td>
+        <td class="text-end <?= $rCls ?>"><strong><?= ($perfRow['periodReturn'] >= 0 ? '+' : '') . number_format($perfRow['periodReturn'], 2) ?>%</strong></td>
+        <td class="text-end <?= $aCls ?>">
+          <?php if ($perfRow['annualReturn'] !== null): ?>
+            <?= ($perfRow['annualReturn'] >= 0 ? '+' : '') . number_format($perfRow['annualReturn'], 2) ?>%/yr
+          <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <?php if ($cpaRow === null): ?>
+  <p class="text-muted small">Not currently held as of <?= formatDate($perfTo) ?> — no cost/profit analysis to show.</p>
+  <?php else: ?>
+  <h5 class="report-section-title" style="font-size:.95rem">Cost &amp; Profit Analysis</h5>
+  <p class="text-muted small">
+    Total Profit and Total Return % are approximations for this date range — see
+    <a href="<?= BASE_PATH ?>/reports/investment_performance">Investment Performance</a> for the full methodology note.
+  </p>
+  <table class="table table-sm report-table mb-2">
+    <thead>
+      <tr>
+        <th class="text-end">Shares</th><th class="text-end">Avg Cost</th><th class="text-end">Cost Basis</th>
+        <th class="text-end">Market Value</th><th class="text-end">Unrealized G/L</th>
+        <th class="text-end">Div/Interest</th><th class="text-end">Reinvested</th>
+        <th class="text-end">Total Distrib.</th><th class="text-end">Total Profit</th><th class="text-end">Total Return</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php
+        $uglCls = $cpaRow['unrealizedGainLoss'] !== null ? ($cpaRow['unrealizedGainLoss'] >= 0 ? 'amount-credit' : 'amount-debit') : '';
+        $tpCls  = $cpaRow['totalProfit']        !== null ? ($cpaRow['totalProfit']        >= 0 ? 'amount-credit' : 'amount-debit') : '';
+        $trCls  = $cpaRow['totalReturnPct']     !== null ? ($cpaRow['totalReturnPct']     >= 0 ? 'amount-credit' : 'amount-debit') : '';
+      ?>
+      <tr>
+        <td class="text-end"><?= rtrim(rtrim(number_format($cpaRow['qty'], 6), '0'), '.') ?></td>
+        <td class="text-end"><?= $cpaRow['avgCost'] > 0 ? formatMoney($cpaRow['avgCost']) : '—' ?></td>
+        <td class="text-end"><?= formatMoney($cpaRow['costBasis']) ?></td>
+        <td class="text-end"><?= $cpaRow['marketValue'] !== null ? formatMoney($cpaRow['marketValue']) : '<span class="text-muted">—</span>' ?></td>
+        <td class="text-end <?= $uglCls ?>">
+          <?php if ($cpaRow['unrealizedGainLoss'] !== null): ?>
+            <?= ($cpaRow['unrealizedGainLoss'] >= 0 ? '+' : '-') . formatMoney(abs($cpaRow['unrealizedGainLoss'])) ?>
+          <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+        </td>
+        <td class="text-end"><?= $cpaRow['dividendsInterest'] > 0 ? formatMoney($cpaRow['dividendsInterest']) : '—' ?></td>
+        <td class="text-end"><?= $cpaRow['reinvestedDistributions'] > 0 ? formatMoney($cpaRow['reinvestedDistributions']) : '—' ?></td>
+        <td class="text-end"><?= $cpaRow['totalDistributions'] > 0 ? formatMoney($cpaRow['totalDistributions']) : '—' ?></td>
+        <td class="text-end <?= $tpCls ?>">
+          <?php if ($cpaRow['totalProfit'] !== null): ?>
+            <?= ($cpaRow['totalProfit'] >= 0 ? '+' : '-') . formatMoney(abs($cpaRow['totalProfit'])) ?>
+          <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+        </td>
+        <td class="text-end <?= $trCls ?>">
+          <?php if ($cpaRow['totalReturnPct'] !== null): ?>
+            <strong><?= ($cpaRow['totalReturnPct'] >= 0 ? '+' : '') . number_format($cpaRow['totalReturnPct'], 2) ?>%</strong>
+          <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <?php if (!empty($cpaRow['distributions'])): ?>
+  <details class="small">
+    <summary class="text-muted" style="cursor:pointer">
+      <?= count($cpaRow['distributions']) ?> distribution transaction<?= count($cpaRow['distributions']) !== 1 ? 's' : '' ?> in this range
+    </summary>
+    <table class="table table-sm mt-2 mb-0">
+      <thead><tr><th>Date</th><th>Type</th><th class="text-end">Amount</th></tr></thead>
+      <tbody>
+        <?php foreach ($cpaRow['distributions'] as $d): ?>
+        <tr>
+          <td><?= formatDate($d['date']) ?></td>
+          <td><?= h($actLabels[$d['activity']] ?? $d['activity']) ?></td>
+          <td class="text-end"><?= formatMoney($d['amount']) ?></td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </details>
+  <?php endif; ?>
+  <?php endif; ?>
+  <?php endif; ?>
+</div>
+
 <?php include __DIR__ . '/../includes/price_history_modal.php'; ?>
 
 <script>
@@ -495,6 +647,30 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
         '<span class="text-danger small">Failed to load price history.</span>';
     }
   })();
+})();
+
+(function(){
+  const fromInput = document.getElementById('secPerfFrom');
+  const toInput   = document.getElementById('secPerfTo');
+  if (!fromInput || !toInput) return;
+  const today = new Date().toISOString().slice(0, 10);
+
+  document.querySelectorAll('.sec-perf-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      toInput.value = today;
+      if (btn.dataset.all) {
+        fromInput.value = '2000-01-01';
+      } else if (btn.dataset.ytd) {
+        fromInput.value = today.slice(0, 4) + '-01-01';
+      } else {
+        const months = parseInt(btn.dataset.months);
+        const d = new Date();
+        d.setMonth(d.getMonth() - months);
+        fromInput.value = d.toISOString().slice(0, 10);
+      }
+      document.getElementById('secPerfForm').submit();
+    });
+  });
 })();
 
 function exportSecurityCSV() {
