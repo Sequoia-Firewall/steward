@@ -116,6 +116,17 @@ $histRanges     = [
     'last_12mo'  => ['start' => $last12Start,   'end' => $last12End],
     'last_month' => ['start' => $lastMonStart,   'end' => $lastMonEnd],
 ];
+// Scope reference figures to the budget's own accounts when they're already
+// known (editing). A new budget has no saved accounts yet at this point (the
+// wizard is one server-rendered page; step 2's checkboxes don't trigger a
+// re-render), so there's nothing to scope to and it falls back to all accounts.
+$histAcctWhere  = '';
+$histAcctParams = [];
+if ($isEdit && !empty($selAccts)) {
+    $histAcctPhs    = implode(',', array_fill(0, count($selAccts), '?'));
+    $histAcctWhere  = " AND t.account_id IN ($histAcctPhs)";
+    $histAcctParams = $selAccts;
+}
 $histStmt = $db->prepare(
     "SELECT COALESCE(ts.subcategory_id, ts.category_id) AS category_id,
             SUM(CASE WHEN t.transaction_date BETWEEN ? AND ? THEN ts.amount ELSE 0 END) AS last_year,
@@ -127,9 +138,10 @@ $histStmt = $db->prepare(
      WHERE c.type IN ('income','expense')
        AND c.name != '--Split--'
        AND t.transaction_date >= ?
+       $histAcctWhere
      GROUP BY COALESCE(ts.subcategory_id, ts.category_id)"
 );
-$histStmt->execute([$prevYearStart, $prevYearEnd, $last12Start, $last12End, $lastMonStart, $lastMonEnd, $prevYearStart]);
+$histStmt->execute([$prevYearStart, $prevYearEnd, $last12Start, $last12End, $lastMonStart, $lastMonEnd, $prevYearStart, ...$histAcctParams]);
 $histSpend = [];
 foreach ($histStmt->fetchAll() as $r) {
     $histSpend[(int)$r['category_id']] = [

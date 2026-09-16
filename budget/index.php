@@ -79,9 +79,9 @@ foreach ($budgets as $b) {
              JOIN transactions t ON t.id = ts.transaction_id
              WHERE t.transaction_date BETWEEN ? AND ?
                AND t.account_id IN ($aPhs)
-               AND ts.category_id IN ($cPhs)"
+               AND (ts.category_id IN ($cPhs) OR ts.subcategory_id IN ($cPhs))"
         );
-        $aStmt->execute([$start, $end, ...$acctIds, ...$catIds]);
+        $aStmt->execute([$start, $end, ...$acctIds, ...$catIds, ...$catIds]);
         $totActual = (float)($aStmt->fetchColumn() ?? 0);
     }
 
