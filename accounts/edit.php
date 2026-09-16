@@ -100,6 +100,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($form['name'] === '') $errors[] = 'Account name is required.';
 
+    // Only admin can change account type
+    if (!isAdmin()) $form['type'] = $account['type'];
+
     // Only admin can change opening balance
     if (!isAdmin()) $form['opening_balance'] = $account['opening_balance'];
 

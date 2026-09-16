@@ -1,4 +1,12 @@
 <?php
+require_once __DIR__ . '/../../includes/auth.php';
+if (!isLoggedIn()) {
+    http_response_code(401);
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'error' => 'Authentication required.']);
+    exit;
+}
+
 require_once __DIR__ . '/../src/StewardCsvExporter.php';
 
 try {

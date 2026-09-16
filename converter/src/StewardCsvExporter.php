@@ -18,11 +18,22 @@ class StewardCsvExporter {
         'symbol', 'cusip', 'quantity', 'price', 'commission', 'fees', 'amount', 'memo',
     ];
 
+    // Neutralizes CSV formula injection: prefixes non-numeric values that start with
+    // =, +, -, @, tab, or CR with an apostrophe so spreadsheet apps treat them as text.
+    // Numeric values (including negatives) are left untouched so re-import stays intact.
+    private static function csvSafe(mixed $v): string {
+        $v = (string)($v ?? '');
+        if ($v !== '' && !is_numeric($v) && preg_match('/^[=+\-@\t\r]/', $v)) {
+            return "'" . $v;
+        }
+        return $v;
+    }
+
     public static function generateHistoryCsv(array $transactions): string {
         $buf = fopen('php://temp', 'r+');
         fputcsv($buf, self::$HISTORY_COLUMNS);
         foreach ($transactions as $t) {
-            fputcsv($buf, [
+            fputcsv($buf, array_map([self::class, 'csvSafe'], [
                 $t['account_number'] ?? '',
                 $t['date']           ?? '',
                 $t['settle_date']    ?? '',
@@ -36,7 +47,7 @@ class StewardCsvExporter {
                 $t['fees']           ?? '',
                 $t['amount']         ?? '',
                 $t['memo']           ?? '',
-            ]);
+            ]));
         }
         rewind($buf);
         $csv = stream_get_contents($buf);
@@ -54,7 +65,7 @@ class StewardCsvExporter {
             $mktVal = ($qty !== null && $price !== null) ? round($qty * $price, 4) : '';
             $acct = ($h['account_number'] ?? '') !== '' ? $h['account_number'] : ($h['account_name'] ?? '');
 
-            fputcsv($buf, [
+            fputcsv($buf, array_map([self::class, 'csvSafe'], [
                 $acct,
                 $date,
                 $h['symbol']           ?? '',
@@ -65,7 +76,7 @@ class StewardCsvExporter {
                 $mktVal,
                 $h['avg_cost_basis']   ?? '',
                 $h['total_cost_basis'] ?? '',
-            ]);
+            ]));
         }
 
         rewind($buf);

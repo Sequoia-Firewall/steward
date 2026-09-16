@@ -47,7 +47,7 @@ if (isset($_GET['download']) && $_GET['download'] === 'csv') {
             $r['cash_amount'] != 0.0 ? number_format((float)$r['cash_amount'], 2, '.', '') : '',
         ];
         if ($isMultiAcctCsv) array_unshift($line, $r['account_name'] ?? '');
-        fputcsv($out, $line);
+        fputcsv($out, array_map('csvFormulaSafe', $line));
     }
     fclose($out);
     exit;

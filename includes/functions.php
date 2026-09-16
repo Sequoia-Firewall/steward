@@ -68,6 +68,17 @@ function h(mixed $s): string {
     return htmlspecialchars((string)($s ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+// Neutralizes CSV formula injection: prefixes non-numeric values that start with
+// =, +, -, @, tab, or CR with an apostrophe so spreadsheet apps treat them as text.
+// Numeric values (including negatives) are left untouched so re-import stays intact.
+function csvFormulaSafe(mixed $s): string {
+    $s = (string)($s ?? '');
+    if ($s !== '' && !is_numeric($s) && preg_match('/^[=+\-@\t\r]/', $s)) {
+        return "'" . $s;
+    }
+    return $s;
+}
+
 // ── Accounts ───────────────────────────────────────────────────
 
 function getAccounts(bool $activeOnly = true, bool $includeClosed = false): array {

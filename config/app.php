@@ -18,7 +18,14 @@ ini_set('session.use_strict_mode', 1);
 session_name('STEWARD_SESSION');
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_set_cookie_params(['path' => BASE_PATH === '' ? '/' : BASE_PATH . '/']);
+    $_isHttpsNow = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')
+                || ((int)($_SERVER['SERVER_PORT'] ?? 0) === 443);
+    session_set_cookie_params([
+        'path'     => BASE_PATH === '' ? '/' : BASE_PATH . '/',
+        'secure'   => $_isHttpsNow,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 date_default_timezone_set('America/New_York');
