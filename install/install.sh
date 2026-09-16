@@ -109,6 +109,11 @@ read -rp "  Load sample data (3 demo users, sample transactions)? [y/N]: " LOAD_
 LOAD_SAMPLE=${LOAD_SAMPLE:-n}
 
 echo
+APP_SRC="${SCRIPT_DIR}/app"
+if [[ ! -d "$APP_SRC" ]]; then
+    die "App source directory not found at ${APP_SRC}"
+fi
+
 # ── confirmation ──────────────────────────────────────────────────────────────
 echo -e "${BOLD}Review settings${NC}"
 echo "  Install path : ${WEB_ROOT}/${APP_DIR}"
@@ -145,11 +150,11 @@ SQL
 
     if [[ ${LOAD_SAMPLE,,} == y* ]]; then
         info "Importing sample data…"
-        if [[ -f "${SCRIPT_DIR}/sample_data.sql" ]]; then
-            mysql "${MYSQL_ADMIN_OPTS[@]}" "$DB_NAME" < "${SCRIPT_DIR}/sample_data.sql"
+        if [[ -f "${APP_SRC}/sql/sample_data.sql" ]]; then
+            mysql "${MYSQL_ADMIN_OPTS[@]}" "$DB_NAME" < "${APP_SRC}/sql/sample_data.sql"
             success "Sample data loaded"
         else
-            warn "sample_data.sql not found — skipping"
+            warn "sql/sample_data.sql not found in app source — skipping"
         fi
     fi
 else
@@ -166,11 +171,6 @@ if [[ -d "$INSTALL_DEST" ]]; then
     warn "${INSTALL_DEST} already exists — files will be overwritten."
     read -rp "  Continue? [y/N]: " OVR
     [[ ${OVR,,} == y* ]] || { echo "Aborted."; exit 0; }
-fi
-
-APP_SRC="${SCRIPT_DIR}/app"
-if [[ ! -d "$APP_SRC" ]]; then
-    die "App source directory not found at ${APP_SRC}"
 fi
 
 rsync -a --exclude='.claude/' --exclude='install/' "${APP_SRC}/" "${INSTALL_DEST}/"
@@ -248,26 +248,61 @@ if [[ $WEB_SERVER == apache2 ]]; then
     fi
 fi
 
-# ── done ──────────────────────────────────────────────────────────────────────
+# ── verify AllowOverride FileInfo ──────────────────────────────────────────────
+verify_allow_override() {
+    command -v curl &>/dev/null || return 1
+    local url="http://127.0.0.1${APP_PATH}/setup/probe-check"
+    local body
+    body=$(curl -fsS --max-time 4 "$url" 2>/dev/null || true)
+    [[ "$body" == "PROBE_OK" ]]
+}
+
 echo
-echo -e "${GREEN}${BOLD}Installation complete!${NC}"
-echo
-echo -e "  ${BOLD}Next steps:${NC}"
+echo -e "${BOLD}Next steps:${NC}"
 echo
 echo -e "  1. Add the Directory block from ${SCRIPT_DIR}/apache.conf.example"
 echo -e "     to your Apache VirtualHost config, then reload:"
 echo -e "       sudo systemctl reload apache2"
 echo
-echo -e "  2. Open  http://YOUR_SERVER${APP_PATH}/"
+
+ALLOW_OVERRIDE_OK=0
+if [[ $WEB_SERVER == apache2 ]]; then
+    while true; do
+        read -rp "  Press Enter once step 1 is done, to verify AllowOverride FileInfo is active (or type 's' to skip): " VERIFY
+        if [[ ${VERIFY,,} == s* ]]; then
+            warn "Skipped. The setup wizard will re-check this before it lets you continue."
+            break
+        fi
+        if verify_allow_override; then
+            success "AllowOverride FileInfo is active — .htaccess rewrites are working"
+            ALLOW_OVERRIDE_OK=1
+            break
+        else
+            warn "Could not confirm AllowOverride is active (probe request failed)."
+            warn "Check that the Directory block was added and Apache was reloaded, then try again."
+        fi
+    done
+fi
+
+echo
+echo -e "${GREEN}${BOLD}Installation complete!${NC}"
+echo
+if [[ $WEB_SERVER == apache2 && $ALLOW_OVERRIDE_OK -ne 1 ]]; then
+    warn "AllowOverride FileInfo is not confirmed working yet."
+    warn "Pretty URLs and the setup wizard's rewrite-based routing will not work without it."
+fi
+echo -e "  ${BOLD}Next steps:${NC}"
+echo
+echo -e "  1. Open  http://YOUR_SERVER${APP_PATH}/"
 echo
 if [[ ${LOAD_SAMPLE,,} == y* ]]; then
-    echo -e "  3. Default login credentials (CHANGE THESE IMMEDIATELY):"
+    echo -e "  2. Default login credentials (CHANGE THESE IMMEDIATELY):"
     echo -e "       admin  / Admin123!   (administrator)"
     echo -e "       john   / John123!    (user)"
     echo -e "       viewer / View123!    (viewer)"
 else
-    echo -e "  3. No sample data was loaded."
+    echo -e "  2. No sample data was loaded."
     echo -e "     Log in with any credentials you add via SQL, or run:"
-    echo -e "       mysql -u ${DB_USER} -p ${DB_NAME} < ${SCRIPT_DIR}/sample_data.sql"
+    echo -e "       mysql -u ${DB_USER} -p ${DB_NAME} < ${INSTALL_DEST}/sql/sample_data.sql"
 fi
 echo
