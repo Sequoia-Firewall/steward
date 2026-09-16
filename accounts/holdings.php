@@ -19,7 +19,10 @@ $rawDate = trim($_GET['as_of'] ?? '');
 $asOf = ($rawDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate)) ? $rawDate : $today;
 $isHistorical = ($asOf < $today);
 
-// Per-account holdings with average cost basis, as of $asOf
+// Per-account holdings, as of $asOf. Quantity comes from this query; cost basis
+// comes from the shared chronological replay engine (getInvestmentCostBasesByAccount)
+// so it re-bases proportionally on sells instead of blending in the cost of shares
+// no longer held — same engine used by the portfolio/value-history reports.
 $stmt = $db->prepare(
     'SELECT
         i.id,
@@ -30,9 +33,7 @@ $stmt = $db->prepare(
             WHEN it.activity IN (\'buy\',\'add\',\'split\',\'reinvest_div\',\'reinvest_cap\') THEN  it.quantity
             WHEN it.activity IN (\'sell\',\'remove\')                                         THEN -it.quantity
             ELSE 0
-        END), 0) AS net_quantity,
-        SUM(CASE WHEN it.activity IN (\'buy\',\'add\',\'reinvest_div\',\'reinvest_cap\') THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost,
-        SUM(CASE WHEN it.activity IN (\'buy\',\'add\',\'split\',\'reinvest_div\',\'reinvest_cap\') THEN it.quantity ELSE 0 END) AS buy_qty
+        END), 0) AS net_quantity
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
      JOIN investments   i ON i.id = it.investment_id
@@ -44,7 +45,10 @@ $stmt = $db->prepare(
 $stmt->execute([$id, $asOf]);
 $rawHoldings = $stmt->fetchAll();
 
-$latestPrices = $isHistorical ? getInvestmentPricesAsOf($asOf) : getLatestInvestmentPrices();
+// Always pass $asOf (not null) so future-dated transactions are excluded the
+// same way the net_quantity query above excludes them via `<= $asOf`.
+$costBasesByAccount = getInvestmentCostBasesByAccount($asOf);
+$latestPrices        = $isHistorical ? getInvestmentPricesAsOf($asOf) : getLatestInvestmentPrices();
 
 // Build display rows + totals
 $rows             = [];
@@ -54,11 +58,10 @@ $totalGainLoss    = 0.0;
 $anyMissingPrice  = false;
 
 foreach ($rawHoldings as $h) {
-    $invId    = (int)$h['id'];
-    $qty      = (float)$h['net_quantity'];
-    $buyQty   = (float)$h['buy_qty'];
-    $buyCost  = (float)$h['buy_cost'];
-    $avgCost  = $buyQty > 0 ? $buyCost / $buyQty : 0.0;
+    $invId     = (int)$h['id'];
+    $qty       = (float)$h['net_quantity'];
+    $basis     = $costBasesByAccount[$invId . ':' . $id] ?? ['avg_cost' => 0.0, 'buy_cost' => 0.0];
+    $avgCost   = $basis['avg_cost'];
     $costBasis = $avgCost * $qty;
 
     $price       = $latestPrices[$invId]['price']      ?? null;
