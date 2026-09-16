@@ -73,7 +73,7 @@ let splitCounters = { w: 0, d: 0 };
 function buildCatOptions(selectedId) {
   if (typeof categoryData === 'undefined') return '';
   let html = '<option value="">-- Category --</option>';
-  const groups = { expense: 'EXPENSES', income: 'INCOME', transfer: 'TRANSFERS' };
+  const groups = { expense: 'EXPENSES', income: 'INCOME', transfer: 'TRANSFERS', special: 'SPECIAL' };
   Object.entries(groups).forEach(([type, label]) => {
     const cats = categoryData.filter(c => c.type === type);
     if (!cats.length) return;

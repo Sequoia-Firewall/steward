@@ -22,8 +22,16 @@ if ($name === '') {
     echo json_encode(['ok' => false, 'error' => 'Name is required']);
     exit;
 }
-if (!in_array($type, ['income', 'expense'])) {
+if (!in_array($type, ['income', 'expense', 'special'])) {
     echo json_encode(['ok' => false, 'error' => 'Invalid type']);
+    exit;
+}
+// 'special' only exists as a subcategory of the {Special} system category —
+// top-level categories always take their submitted type as-is (subcategories
+// get overridden to their parent's real type below), so this is the only
+// place a bogus top-level 'special' category could otherwise slip through.
+if ($type === 'special' && !$parentId) {
+    echo json_encode(['ok' => false, 'error' => 'Special categories can only be added as subcategories of {Special}.']);
     exit;
 }
 

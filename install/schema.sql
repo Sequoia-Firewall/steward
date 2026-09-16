@@ -88,7 +88,7 @@ CREATE TABLE categories (
     id         INT AUTO_INCREMENT PRIMARY KEY,
     name       VARCHAR(100) NOT NULL,
     parent_id  INT          DEFAULT NULL,
-    type       ENUM('income','expense','transfer') NOT NULL DEFAULT 'expense',
+    type       ENUM('income','expense','transfer','special') NOT NULL DEFAULT 'expense',
     is_active  TINYINT(1)   NOT NULL DEFAULT 1,
     is_system  TINYINT(1)   NOT NULL DEFAULT 0,
     tax_related TINYINT(1)  NOT NULL DEFAULT 0,
@@ -468,6 +468,12 @@ INSERT INTO categories (name, type, parent_id, is_active) VALUES
 
 -- System category for cash transfers (auto-assigned, protected from rename/delete)
 INSERT IGNORE INTO categories (name, type, is_system, is_active) VALUES ('{Cash Transfer}', 'transfer', 1, 1);
+
+-- System parent for user-defined "special" subcategories: money movements that
+-- aren't real income/expense (e.g. placeholder/non-taxable pass-throughs) and
+-- should be excluded from income/expense reports and budgets. The parent itself
+-- is protected from rename/delete; users add their own subcategories under it.
+INSERT IGNORE INTO categories (name, type, is_system, is_active) VALUES ('{Special}', 'special', 1, 1);
 
 -- ──────────────────────────────────────────────────────────────
 -- Default admin account

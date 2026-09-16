@@ -78,6 +78,7 @@ include __DIR__ . '/../includes/header.php';
         <select name="type" id="catType" class="form-select">
           <option value="expense">Expense</option>
           <option value="income">Income</option>
+          <option value="special">Special</option>
         </select>
       </div>
       <div class="col-md-2 d-flex align-items-end">
@@ -226,18 +227,64 @@ if (!empty($sysCats)):
         <th>Category</th>
         <th>Type</th>
         <th>Subcategories</th>
+        <?php if (canEdit()): ?><th></th><?php endif; ?>
       </tr>
     </thead>
     <tbody>
-      <?php foreach ($sysCats as $cat): ?>
+      <?php foreach ($sysCats as $cat):
+        $isSpecial = $cat['type'] === 'special';
+        $badgeCls  = $isSpecial ? 'badge-special' : 'bg-secondary';
+      ?>
       <tr class="text-muted">
         <td><strong><?= h($cat['name']) ?></strong></td>
-        <td><span class="badge bg-secondary"><?= h($cat['type']) ?></span></td>
-        <td><?php if (!empty($cat['children'])): ?>
-          <?php foreach ($cat['children'] as $sub): ?>
-          <span class="subcat-chip"><?= h($sub['name']) ?></span>
-          <?php endforeach; ?>
-        <?php else: ?><span class="text-muted">—</span><?php endif; ?></td>
+        <td><span class="badge <?= $badgeCls ?>"><?= h($cat['type']) ?></span></td>
+        <td>
+          <?php if (!empty($cat['children'])): ?>
+          <div class="subcat-list">
+            <?php foreach ($cat['children'] as $sub):
+              $subCount = $txnCounts[$sub['id']] ?? 0;
+            ?>
+            <?php if ($isSpecial): ?>
+            <span class="subcat-chip">
+              <?php if (isAdmin()): ?>
+              <input type="checkbox" class="form-check-input row-check subcat-check" data-section="special"
+                     value="<?= $sub['id'] ?>" title="Select <?= h($sub['name']) ?>">
+              <?php endif; ?>
+              <a href="<?= BASE_PATH ?>/transactions/search?cat=<?= $sub['id'] ?>" class="text-decoration-none cat-link-special"><?= h($sub['name']) ?></a>
+              <?php if ($subCount > 0): ?>
+              <span class="subcat-count"><?= $subCount ?></span>
+              <?php endif; ?>
+              <?php if (canEdit()): ?>
+              <button class="subcat-action" title="Edit subcategory"
+                      onclick="editCat(<?= $sub['id'] ?>, '<?= h(addslashes($sub['name'])) ?>', <?= $cat['id'] ?>, 'special', <?= $subCount ?>, false)">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <?php endif; ?>
+              <?php if (isAdmin()): ?>
+              <button class="subcat-action subcat-delete" title="Delete subcategory"
+                      onclick="deleteCat(<?= $sub['id'] ?>, '<?= h(addslashes($sub['name'])) ?>', <?= $subCount ?>)">
+                <i class="bi bi-x"></i>
+              </button>
+              <?php endif; ?>
+            </span>
+            <?php else: ?>
+            <span class="subcat-chip"><?= h($sub['name']) ?></span>
+            <?php endif; ?>
+            <?php endforeach; ?>
+          </div>
+          <?php else: ?>
+          <span class="text-muted">—</span>
+          <?php endif; ?>
+        </td>
+        <?php if (canEdit()): ?>
+        <td class="text-nowrap">
+          <?php if ($isSpecial): ?>
+          <button class="btn btn-sm p-0 cat-addsub-special" onclick="showCategoryForm(0, <?= $cat['id'] ?>, 'special')">
+            <i class="bi bi-plus"></i> Add sub
+          </button>
+          <?php endif; ?>
+        </td>
+        <?php endif; ?>
       </tr>
       <?php endforeach; ?>
     </tbody>
@@ -345,6 +392,13 @@ if (!empty($sysCats)):
 .cat-addsub-expense:hover { color:#a71d2a; }
 .cat-addsub-income  { background:none; border:none; color:#198754; font-size:.8rem; cursor:pointer; }
 .cat-addsub-income:hover  { color:#0f5132; }
+
+/* Special category type (money movements excluded from income/expense reports) */
+.badge-special       { background:#8250df !important; color:#fff; }
+.cat-link-special    { color:#8250df !important; }
+.cat-link-special:hover { color:#6633b8 !important; }
+.cat-addsub-special  { background:none; border:none; color:#8250df; font-size:.8rem; cursor:pointer; }
+.cat-addsub-special:hover { color:#6633b8; }
 </style>
 
 <script>

@@ -224,7 +224,7 @@
             <label>Category</label>
             <select name="category_w" id="category_w" class="form-select" onchange="loadSubcategories('w')">
               <option value="">-- Select Category --</option>
-              <?php foreach (['expense' => 'EXPENSES', 'income' => 'INCOME'] as $ctype => $clabel): ?>
+              <?php foreach (['expense' => 'EXPENSES', 'income' => 'INCOME', 'special' => 'SPECIAL'] as $ctype => $clabel): ?>
               <?php if (!empty($categoriesByType[$ctype])): ?>
               <optgroup label="<?= $clabel ?>">
                 <?php foreach ($categoriesByType[$ctype] as $cat): ?>
@@ -300,7 +300,7 @@
             <label>Category</label>
             <select name="category_d" id="category_d" class="form-select" onchange="loadSubcategories('d')">
               <option value="">-- Select Category --</option>
-              <?php foreach (['expense' => 'EXPENSES', 'income' => 'INCOME'] as $ctype => $clabel): ?>
+              <?php foreach (['expense' => 'EXPENSES', 'income' => 'INCOME', 'special' => 'SPECIAL'] as $ctype => $clabel): ?>
               <?php if (!empty($categoriesByType[$ctype])): ?>
               <optgroup label="<?= $clabel ?>">
                 <?php foreach ($categoriesByType[$ctype] as $cat): ?>
