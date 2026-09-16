@@ -56,6 +56,7 @@ $categoriesByType  = [];
 foreach ($categoryHierarchy as $cat) $categoriesByType[$cat['type']][] = $cat;
 $linkedAccount     = getLinkedAccount($account);
 $allInvestments    = $isInvestAccount ? getAllInvestments() : [];
+$missingCheckNums  = $isInvestAccount ? [] : findCheckNumberGaps($id);
 
 $pageTitle         = $account['name'] . ' — Register';
 $currentPage       = 'accounts';
@@ -126,6 +127,13 @@ include __DIR__ . '/../includes/header.php';
           <span class="bal-label">Ending Balance</span>
           <span class="bal-amount <?= $balCls ?>"><?= formatMoney($balance) ?></span>
         </div>
+        <?php if ($account['last_reconciled_balance'] !== null): ?>
+        <?php $reconBalCls = round((float)$account['last_reconciled_balance'], MONEY_DECIMALS) < 0 ? 'neg' : 'pos'; ?>
+        <div class="bal-reconciled-block">
+          <span class="bal-label">Reconciled Balance</span>
+          <span class="bal-amount <?= $reconBalCls ?>"><?= formatMoney((float)$account['last_reconciled_balance']) ?></span>
+        </div>
+        <?php endif; ?>
         <?php if ($linkedAccount): ?>
         <?php
           $linkedBal    = getAccountBalance((int)$linkedAccount['id']);
@@ -204,6 +212,13 @@ include __DIR__ . '/../includes/header.php';
       <a href="<?= BASE_PATH ?>/accounts/edit?id=<?= $id ?>" class="ms-2">Edit account</a> to reopen it.
       <?php endif; ?>
     </div>
+  </div>
+  <?php endif; ?>
+
+  <?php if (!empty($missingCheckNums)): ?>
+  <div class="alert alert-warning d-flex align-items-center gap-2 mb-3" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <div>Missing check number<?= count($missingCheckNums) !== 1 ? 's' : '' ?>: <strong><?= h(formatNumberRanges($missingCheckNums)) ?></strong></div>
   </div>
   <?php endif; ?>
 

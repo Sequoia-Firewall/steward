@@ -64,8 +64,22 @@ include __DIR__ . '/../includes/header.php';
                       && (int)$user['is_active'] === 1
                       && $activeAdminCount <= 1;
           $hasTxns = ($txnCounts[$user['id']] ?? 0) > 0;
-          if ($user['id'] !== currentUserId() && !$isLastAdmin && !$hasTxns):
+          $isSelf  = $user['id'] === currentUserId();
         ?>
+        <?php if (!$isSelf && ($user['is_active'] || !$isLastAdmin)): ?>
+          <?php if ($user['is_active']): ?>
+          <button class="btn btn-sm btn-outline-secondary" <?= $isLastAdmin ? 'disabled title="Cannot deactivate — this is the last active administrator."' : '' ?>
+                  onclick="confirmToggleActive(<?= $user['id'] ?>, '<?= h(addslashes($user['username'])) ?>', false)">
+            <i class="bi bi-person-dash"></i> Deactivate
+          </button>
+          <?php else: ?>
+          <button class="btn btn-sm btn-outline-success"
+                  onclick="confirmToggleActive(<?= $user['id'] ?>, '<?= h(addslashes($user['username'])) ?>', true)">
+            <i class="bi bi-person-check"></i> Activate
+          </button>
+          <?php endif; ?>
+        <?php endif; ?>
+        <?php if ($user['id'] !== currentUserId() && !$isLastAdmin && !$hasTxns): ?>
         <button class="btn btn-sm btn-outline-danger"
                 onclick="confirmDeleteUser(<?= $user['id'] ?>, '<?= h(addslashes($user['username'])) ?>')">
           <i class="bi bi-trash"></i>
@@ -87,6 +101,10 @@ include __DIR__ . '/../includes/header.php';
   <?= csrfField() ?>
   <input type="hidden" name="id" id="deleteUserId">
 </form>
+<form id="toggleActiveForm" method="post" action="<?= BASE_PATH ?>/users/toggle_active" style="display:none">
+  <?= csrfField() ?>
+  <input type="hidden" name="id" id="toggleActiveUserId">
+</form>
 <form id="resetPrefsForm" method="post" action="<?= BASE_PATH ?>/users/reset_prefs" style="display:none">
   <?= csrfField() ?>
   <input type="hidden" name="id" id="resetPrefsUserId">
@@ -102,6 +120,20 @@ function confirmDeleteUser(id, name) {
       document.getElementById('deleteUserForm').submit();
     },
     'Delete'
+  );
+}
+function confirmToggleActive(id, name, activating) {
+  appConfirm(
+    activating ? 'Activate User' : 'Deactivate User',
+    (activating ? 'Activate' : 'Deactivate') + ' user "' + name + '"?',
+    activating
+      ? 'They will be able to log in again.'
+      : 'They will no longer be able to log in. Their transaction history and settings are kept.',
+    () => {
+      document.getElementById('toggleActiveUserId').value = id;
+      document.getElementById('toggleActiveForm').submit();
+    },
+    activating ? 'Activate' : 'Deactivate'
   );
 }
 function confirmResetPrefs(id, name) {

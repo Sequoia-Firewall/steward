@@ -310,6 +310,51 @@ function getRegisterTransactions(int $accountId, string $sortCol = 'date', strin
     return $rows;
 }
 
+// Numbers skipped in the account's check-number sequence — e.g. checks 1001,
+// 1002, 1005 on file returns [1003, 1004]. Only purely-numeric num values on
+// withdrawals count as check numbers (same convention as the duplicate-check-
+// number maintenance check), so text reference tags like EFT/DEP/ATM are
+// ignored. Capped at a 5,000-number span to avoid a runaway loop if a typo'd
+// check number (e.g. a stray 6-digit value) blows out the range.
+function findCheckNumberGaps(int $accountId): array {
+    $stmt = getDB()->prepare(
+        "SELECT DISTINCT CAST(num AS UNSIGNED) AS n
+         FROM transactions
+         WHERE account_id = ? AND type = 'withdrawal' AND num REGEXP '^[0-9]+$'
+         ORDER BY n"
+    );
+    $stmt->execute([$accountId]);
+    $nums = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    if (count($nums) < 2) return [];
+
+    $min = $nums[0];
+    $max = end($nums);
+    if ($max - $min > 5000) return [];
+
+    $present = array_flip($nums);
+    $missing = [];
+    for ($n = $min; $n <= $max; $n++) {
+        if (!isset($present[$n])) $missing[] = $n;
+    }
+    return $missing;
+}
+
+// Compacts a sorted list of integers into range notation, e.g.
+// [1003, 1004, 1006] -> "1003-1004, 1006".
+function formatNumberRanges(array $numbers): string {
+    if (empty($numbers)) return '';
+    sort($numbers);
+    $ranges = [];
+    $start = $prev = $numbers[0];
+    foreach (array_slice($numbers, 1) as $n) {
+        if ($n === $prev + 1) { $prev = $n; continue; }
+        $ranges[] = $start === $prev ? (string)$start : "$start-$prev";
+        $start = $prev = $n;
+    }
+    $ranges[] = $start === $prev ? (string)$start : "$start-$prev";
+    return implode(', ', $ranges);
+}
+
 function getInvestmentRegisterTransactions(int $accountId, string $sortCol = 'date', string $sortDir = 'asc'): array {
     $db = getDB();
     $orderBy = match($sortCol) {

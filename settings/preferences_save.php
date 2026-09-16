@@ -30,9 +30,12 @@ setSetting('sidebar_cash_in_investment_balance', isset($_POST['sidebar_cash_in_i
 setSetting('nav_hide_loans',              isset($_POST['nav_hide_loans'])              ? '1' : '0');
 setSetting('nav_hide_goals',              isset($_POST['nav_hide_goals'])              ? '1' : '0');
 setSetting('nav_search_icon_only',        isset($_POST['nav_search_icon_only'])        ? '1' : '0');
-$validSchemes = ['blue', 'green', 'red', 'gray', 'brown'];
+$validSchemes = ['blue', 'green', 'red', 'gray', 'brown', 'purple', 'teal', 'slate'];
 $scheme = trim($_POST['color_scheme'] ?? 'blue');
 setSetting('color_scheme', in_array($scheme, $validSchemes, true) ? $scheme : 'blue');
+$validFontSizes = ['small', 'normal', 'large'];
+$fontSize = trim($_POST['font_size'] ?? 'normal');
+setSetting('font_size', in_array($fontSize, $validFontSizes, true) ? $fontSize : 'normal');
 $validNegFmts = ['color', 'minus', 'parens', 'parens-bw'];
 $negFmt = trim($_POST['negative_format'] ?? 'color');
 setSetting('negative_format', in_array($negFmt, $validNegFmts, true) ? $negFmt : 'color');

@@ -47,10 +47,12 @@ $sidebarAccounts  = isLoggedIn() ? getAllAccountsWithBalance($_sidebarBalMode ==
 <!DOCTYPE html>
 <?php
 $colorScheme = function_exists('getSetting') ? (getSetting('color_scheme') ?: 'blue') : 'blue';
-$validSchemes = ['blue','green','red','gray','brown'];
+$validSchemes = ['blue','green','red','gray','brown','purple','teal','slate'];
 if (!in_array($colorScheme, $validSchemes, true)) $colorScheme = 'blue';
+$fontSizePref = function_exists('getSetting') ? (getSetting('font_size') ?: 'normal') : 'normal';
+if (!in_array($fontSizePref, ['small','normal','large'], true)) $fontSizePref = 'normal';
 ?>
-<html lang="en"<?= $colorScheme !== 'blue' ? ' data-theme="' . $colorScheme . '"' : '' ?>>
+<html lang="en"<?= $colorScheme !== 'blue' ? ' data-theme="' . $colorScheme . '"' : '' ?><?= $fontSizePref !== 'normal' ? ' data-font-size="' . $fontSizePref . '"' : '' ?>>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">

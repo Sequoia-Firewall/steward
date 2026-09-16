@@ -23,6 +23,7 @@ $navHideLoans         = getSetting('nav_hide_loans') === '1';
 $navHideGoals         = getSetting('nav_hide_goals') === '1';
 $navSearchIconOnly    = getSetting('nav_search_icon_only') === '1';
 $colorScheme          = getSetting('color_scheme', 'blue');
+$fontSize             = getSetting('font_size', 'normal');
 $loginBgTs            = getSetting('login_bg');
 $hasCustomBg          = $loginBgTs && file_exists(__DIR__ . '/../assets/img/login_bg_custom.jpg');
 $timezoneSetting      = getSetting('timezone', 'America/New_York');
@@ -552,6 +553,9 @@ include __DIR__ . '/../includes/header.php';
                   'red'   => ['label' => 'Red',   'dark' => '#5c1a1a', 'mid' => '#7a2020', 'lt' => '#a83a3a'],
                   'gray'  => ['label' => 'Gray',  'dark' => '#2d3748', 'mid' => '#3a4a5c', 'lt' => '#556070'],
                   'brown' => ['label' => 'Brown', 'dark' => '#3d2314', 'mid' => '#5a3420', 'lt' => '#7d4c30'],
+                  'purple' => ['label' => 'Purple', 'dark' => '#241536', 'mid' => '#4a2f7a', 'lt' => '#7c52c4'],
+                  'teal'   => ['label' => 'Teal',   'dark' => '#0a2b28', 'mid' => '#14524c', 'lt' => '#1f8a7f'],
+                  'slate'  => ['label' => 'Slate',  'dark' => '#171d26', 'mid' => '#33404f', 'lt' => '#56697d'],
               ];
               foreach ($schemes as $key => $s):
                   $checked = ($colorScheme === $key || ($colorScheme === '' && $key === 'blue')) ? 'checked' : '';
@@ -565,6 +569,26 @@ include __DIR__ . '/../includes/header.php';
                 </span>
                 <span class="color-scheme-label"><?= $s['label'] ?></span>
               </label>
+              <?php endforeach; ?>
+            </div>
+          </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="row g-3 align-items-start">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Font Size</label>
+            <p class="text-muted small mb-0">
+              Sets the base text size for all users. The page will reload to preview it.
+            </p>
+          </div>
+          <div class="col-md-8">
+            <div class="btn-group" role="group">
+              <?php foreach (['small' => 'Small', 'normal' => 'Normal', 'large' => 'Large'] as $key => $label): ?>
+              <input type="radio" class="btn-check" name="font_size" id="fontSize_<?= $key ?>"
+                     value="<?= $key ?>" <?= $fontSize === $key ? 'checked' : '' ?>>
+              <label class="btn btn-outline-secondary btn-sm" for="fontSize_<?= $key ?>"><?= $label ?></label>
               <?php endforeach; ?>
             </div>
           </div>
