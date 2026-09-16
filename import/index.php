@@ -149,7 +149,7 @@ include __DIR__ . '/../includes/header.php';
             <tbody>
               <tr>
                 <td class="fw-semibold text-nowrap ps-3 py-3">QIF</td>
-                <td class="py-3">Quicken Interchange Format — exported from Quicken, Microsoft Money, and most personal finance apps. Supports banking and investment transactions.</td>
+                <td class="py-3">Quicken Interchange Format — exported from Quicken and most personal finance apps. Supports banking and investment transactions.</td>
               </tr>
               <tr>
                 <td class="fw-semibold text-nowrap ps-3 py-3">OFX / QFX</td>
