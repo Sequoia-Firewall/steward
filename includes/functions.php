@@ -1060,14 +1060,16 @@ function getInvestmentPerformanceSeries(array $ids, string $fromDate, string $to
 // return when a position grows a lot mid-period (small starting position + a big
 // later buy divides that buy's short-lived gain by a stale, tiny denominator).
 // This averaging is still an approximation, not a true money-weighted/XIRR return.
-// Realized gains from in-period sells are intentionally out of scope — this is
-// current-holdings analysis, not a full realized+unrealized reconciliation.
+// Total Profit also folds in realized gains/losses on any shares sold during the
+// period (avg cost at sale time via _investmentCostBasisPools()'s $saleBasisOut,
+// the same lookup reports/capital_gains.php uses), so a position that was partly
+// or fully traded during the window isn't missing that leg of its profit.
 function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $toDate): array {
     $ids = array_values(array_unique(array_map('intval', $ids)));
     if (empty($ids)) return [];
 
     $dayBeforeFrom = date('Y-m-d', strtotime($fromDate . ' -1 day'));
-    $aggEnd   = _aggregatePoolsByInvestment(_investmentCostBasisPools($toDate));
+    $aggEnd   = _aggregatePoolsByInvestment(_investmentCostBasisPools($toDate, $avgCostAtSale));
     $aggStart = _aggregatePoolsByInvestment(_investmentCostBasisPools($dayBeforeFrom));
 
     $heldIds = array_values(array_filter($ids, fn($id) => ($aggEnd[$id]['qty'] ?? 0.0) > 0.000001));
@@ -1108,6 +1110,50 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
         ];
     }
 
+    // Realized gains/losses on shares sold during the period. periodGainLoss
+    // (below) only tracks the *unrealized* G/L delta, which goes silent on a
+    // sale — the avg cost removed from the pool cancels out with no record of
+    // what the shares actually sold for. $avgCostAtSale (from the aggEnd
+    // replay above) is the same per-sale cost-basis lookup capital_gains.php
+    // uses, so this stays consistent with that report.
+    $salesStmt = $db->prepare(
+        "SELECT it.id AS it_id, it.investment_id, t.transaction_date,
+                it.quantity, it.price, it.commission
+         FROM investment_transactions it
+         JOIN transactions t ON t.id = it.transaction_id
+         JOIN accounts a     ON a.id = t.account_id
+         WHERE a.is_investment_cash = 0 AND it.investment_id IN ($ph)
+           AND it.activity IN ('sell','remove')
+           AND NOT (it.activity = 'remove' AND it.price = 0)
+           AND t.transaction_date BETWEEN ? AND ?
+         ORDER BY it.investment_id, t.transaction_date, it.id"
+    );
+    $salesStmt->execute(array_merge($heldIds, [$fromDate, $toDate]));
+
+    $salesByInv         = array_fill_keys($heldIds, []);
+    $realizedGainLossByInv = array_fill_keys($heldIds, 0.0);
+    foreach ($salesStmt->fetchAll() as $r) {
+        $iid      = (int)$r['investment_id'];
+        $sellQty  = (float)$r['quantity'];
+        $sellPrc  = (float)$r['price'];
+        $sellComm = (float)$r['commission'];
+        $proceeds = $sellQty * $sellPrc - $sellComm;
+
+        $avgCost   = $avgCostAtSale[(int)$r['it_id']] ?? 0.0;
+        $costBasis = $avgCost * $sellQty;
+        $gainLoss  = $proceeds - $costBasis;
+
+        $realizedGainLossByInv[$iid] += $gainLoss;
+        $salesByInv[$iid][] = [
+            'date'      => $r['transaction_date'],
+            'qty'       => $sellQty,
+            'price'     => $sellPrc,
+            'proceeds'  => $proceeds,
+            'costBasis' => $costBasis,
+            'gainLoss'  => $gainLoss,
+        ];
+    }
+
     $out = [];
     foreach ($heldIds as $iid) {
         $qty       = $aggEnd[$iid]['qty'];
@@ -1138,7 +1184,9 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
             else                  $dividendsInterest += $d['amount'];
         }
         $totalDistributions = $dividendsInterest + $reinvestedDist;
-        $totalProfit = $periodGainLoss !== null ? $periodGainLoss + $totalDistributions : null;
+        $realizedGainLoss   = $realizedGainLossByInv[$iid] ?? 0.0;
+        $totalProfit = $periodGainLoss !== null
+            ? $periodGainLoss + $totalDistributions + $realizedGainLoss : null;
 
         $returnBase     = ($costBasisStart + $costBasis) / 2;
         $totalReturnPct = ($totalProfit !== null && $returnBase > 0.000001)
@@ -1155,9 +1203,11 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
             'dividendsInterest'       => $dividendsInterest,
             'reinvestedDistributions' => $reinvestedDist,
             'totalDistributions'      => $totalDistributions,
+            'realizedGainLoss'        => $realizedGainLoss,
             'totalProfit'             => $totalProfit,
             'totalReturnPct'          => $totalReturnPct,
             'distributions'           => $distByInv[$iid],
+            'sales'                   => $salesByInv[$iid],
         ];
     }
     return $out;

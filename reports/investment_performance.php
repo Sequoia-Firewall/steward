@@ -314,9 +314,9 @@ include __DIR__ . '/../includes/header.php';
 <h3 class="report-section-title mt-4">Cost &amp; Profit Analysis</h3>
 <p class="text-muted small">
   For securities currently held as of <?= formatDate($toDate) ?>. Total Profit and Total Return %
-  are approximations for this date range — they divide the change in unrealized gain/loss plus
-  distributions received by the <em>average</em> of the start- and end-of-period cost basis, not a
-  true money-weighted return. Realized gains from sales during this period aren't included here.
+  are approximations for this date range — they divide the change in unrealized gain/loss, plus
+  distributions received, plus realized gains/losses on any shares sold during the period, by the
+  <em>average</em> of the start- and end-of-period cost basis, not a true money-weighted return.
 </p>
 <table class="table table-sm report-table">
   <thead>
@@ -330,6 +330,7 @@ include __DIR__ . '/../includes/header.php';
       <th class="text-end">Div/Interest</th>
       <th class="text-end">Reinvested</th>
       <th class="text-end">Total Distrib.</th>
+      <th class="text-end">Realized G/L</th>
       <th class="text-end">Total Profit</th>
       <th class="text-end">Total Return</th>
     </tr>
@@ -338,6 +339,7 @@ include __DIR__ . '/../includes/header.php';
     <?php foreach ($cpa as $iid => $r):
       $meta    = $invMeta[$iid] ?? ['name' => "Investment $iid", 'symbol' => ''];
       $uglCls  = $r['unrealizedGainLoss'] !== null ? ($r['unrealizedGainLoss'] >= 0 ? 'amount-credit' : 'amount-debit') : '';
+      $rglCls  = $r['realizedGainLoss']    >= 0 ? 'amount-credit' : 'amount-debit';
       $tpCls   = $r['totalProfit']        !== null ? ($r['totalProfit']        >= 0 ? 'amount-credit' : 'amount-debit') : '';
       $trCls   = $r['totalReturnPct']     !== null ? ($r['totalReturnPct']     >= 0 ? 'amount-credit' : 'amount-debit') : '';
     ?>
@@ -366,6 +368,11 @@ include __DIR__ . '/../includes/header.php';
       <td class="text-end"><?= $r['dividendsInterest'] > 0 ? formatMoney($r['dividendsInterest']) : '—' ?></td>
       <td class="text-end"><?= $r['reinvestedDistributions'] > 0 ? formatMoney($r['reinvestedDistributions']) : '—' ?></td>
       <td class="text-end"><?= $r['totalDistributions'] > 0 ? formatMoney($r['totalDistributions']) : '—' ?></td>
+      <td class="text-end <?= $r['realizedGainLoss'] != 0 ? $rglCls : '' ?>">
+        <?php if ($r['realizedGainLoss'] != 0): ?>
+          <?= ($r['realizedGainLoss'] >= 0 ? '+' : '-') . formatMoney(abs($r['realizedGainLoss'])) ?>
+        <?php else: ?>—<?php endif; ?>
+      </td>
       <td class="text-end <?= $tpCls ?>">
         <?php if ($r['totalProfit'] !== null): ?>
           <?= ($r['totalProfit'] >= 0 ? '+' : '-') . formatMoney(abs($r['totalProfit'])) ?>

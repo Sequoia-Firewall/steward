@@ -435,12 +435,14 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
         <th class="text-end">Shares</th><th class="text-end">Avg Cost</th><th class="text-end">Cost Basis</th>
         <th class="text-end">Market Value</th><th class="text-end">Unrealized G/L</th>
         <th class="text-end">Div/Interest</th><th class="text-end">Reinvested</th>
-        <th class="text-end">Total Distrib.</th><th class="text-end">Total Profit</th><th class="text-end">Total Return</th>
+        <th class="text-end">Total Distrib.</th><th class="text-end">Realized G/L</th>
+        <th class="text-end">Total Profit</th><th class="text-end">Total Return</th>
       </tr>
     </thead>
     <tbody>
       <?php
         $uglCls = $cpaRow['unrealizedGainLoss'] !== null ? ($cpaRow['unrealizedGainLoss'] >= 0 ? 'amount-credit' : 'amount-debit') : '';
+        $rglCls = $cpaRow['realizedGainLoss']    >= 0 ? 'amount-credit' : 'amount-debit';
         $tpCls  = $cpaRow['totalProfit']        !== null ? ($cpaRow['totalProfit']        >= 0 ? 'amount-credit' : 'amount-debit') : '';
         $trCls  = $cpaRow['totalReturnPct']     !== null ? ($cpaRow['totalReturnPct']     >= 0 ? 'amount-credit' : 'amount-debit') : '';
       ?>
@@ -457,6 +459,11 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
         <td class="text-end"><?= $cpaRow['dividendsInterest'] > 0 ? formatMoney($cpaRow['dividendsInterest']) : '—' ?></td>
         <td class="text-end"><?= $cpaRow['reinvestedDistributions'] > 0 ? formatMoney($cpaRow['reinvestedDistributions']) : '—' ?></td>
         <td class="text-end"><?= $cpaRow['totalDistributions'] > 0 ? formatMoney($cpaRow['totalDistributions']) : '—' ?></td>
+        <td class="text-end <?= $cpaRow['realizedGainLoss'] != 0 ? $rglCls : '' ?>">
+          <?php if ($cpaRow['realizedGainLoss'] != 0): ?>
+            <?= ($cpaRow['realizedGainLoss'] >= 0 ? '+' : '-') . formatMoney(abs($cpaRow['realizedGainLoss'])) ?>
+          <?php else: ?>—<?php endif; ?>
+        </td>
         <td class="text-end <?= $tpCls ?>">
           <?php if ($cpaRow['totalProfit'] !== null): ?>
             <?= ($cpaRow['totalProfit'] >= 0 ? '+' : '-') . formatMoney(abs($cpaRow['totalProfit'])) ?>
@@ -470,6 +477,31 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
       </tr>
     </tbody>
   </table>
+
+  <?php if (!empty($cpaRow['sales'])): ?>
+  <details class="small">
+    <summary class="text-muted" style="cursor:pointer">
+      <?= count($cpaRow['sales']) ?> sale<?= count($cpaRow['sales']) !== 1 ? 's' : '' ?> in this range (realized G/L included in Total Profit above)
+    </summary>
+    <table class="table table-sm mt-2 mb-0">
+      <thead><tr><th>Date</th><th class="text-end">Shares</th><th class="text-end">Price</th><th class="text-end">Proceeds</th><th class="text-end">Cost Basis</th><th class="text-end">Gain/Loss</th></tr></thead>
+      <tbody>
+        <?php foreach ($cpaRow['sales'] as $s): ?>
+        <tr>
+          <td><?= formatDate($s['date']) ?></td>
+          <td class="text-end"><?= rtrim(rtrim(number_format($s['qty'], 6), '0'), '.') ?></td>
+          <td class="text-end"><?= formatMoney($s['price']) ?></td>
+          <td class="text-end"><?= formatMoney($s['proceeds']) ?></td>
+          <td class="text-end"><?= formatMoney($s['costBasis']) ?></td>
+          <td class="text-end <?= $s['gainLoss'] >= 0 ? 'amount-credit' : 'amount-debit' ?>">
+            <?= ($s['gainLoss'] >= 0 ? '+' : '-') . formatMoney(abs($s['gainLoss'])) ?>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </details>
+  <?php endif; ?>
 
   <?php if (!empty($cpaRow['distributions'])): ?>
   <details class="small">
