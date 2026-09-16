@@ -1124,7 +1124,13 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
          JOIN accounts a     ON a.id = t.account_id
          WHERE a.is_investment_cash = 0 AND it.investment_id IN ($ph)
            AND it.activity IN ('sell','remove')
-           AND NOT (it.activity = 'remove' AND it.price = 0)
+           -- A 'remove' is a real disposal only when it's an option/security expiring
+           -- worthless (action_type 'Expire' — a genuine $0-proceeds capital loss).
+           -- Every other 'remove' is a non-cash holdings-reconciliation or transfer-out
+           -- adjustment (action_type 'ShrsOut', or NULL from manual entry, which never
+           -- collects a price) — not a sale, even when reconciliation happened to
+           -- record a nonzero snapshot price. Matches the filter in capital_gains.php.
+           AND (it.activity != 'remove' OR it.action_type = 'Expire')
            AND t.transaction_date BETWEEN ? AND ?
          ORDER BY it.investment_id, t.transaction_date, it.id"
     );

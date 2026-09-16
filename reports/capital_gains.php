@@ -10,12 +10,12 @@ $yearFilter = (int)($_GET['year'] ?? 0);
 
 $currentYear = (int)date('Y');
 
-// Available years (from sell transactions)
+// Available years (from real disposals — see the matching filter below)
 $years = $db->query(
     "SELECT DISTINCT YEAR(t.transaction_date) AS yr
      FROM investment_transactions it
      JOIN transactions t ON t.id = it.transaction_id
-     WHERE it.activity IN ('sell','remove')
+     WHERE (it.activity = 'sell' OR (it.activity = 'remove' AND it.action_type = 'Expire'))
      ORDER BY yr DESC"
 )->fetchAll(PDO::FETCH_COLUMN);
 
@@ -77,10 +77,15 @@ $stmt = $db->prepare(
      JOIN investments   i ON i.id = it.investment_id
      JOIN accounts      a ON a.id = t.account_id
      WHERE it.activity IN ('sell','remove') AND a.is_investment_cash = 0
-       -- A zero-price 'remove' is a holdings-reconciliation share adjustment, not a
-       -- real sale — exclude it here (display only; the cost-basis replay below still
-       -- processes it so later real sales keep the correct running avg cost).
-       AND NOT (it.activity = 'remove' AND it.price = 0)
+       -- A 'remove' is a real disposal only when it's an option/security expiring
+       -- worthless (action_type 'Expire' — a genuine $0-proceeds capital loss).
+       -- Every other 'remove' is a non-cash holdings-reconciliation or transfer-out
+       -- adjustment (action_type 'ShrsOut', or NULL from manual entry, which never
+       -- collects a price) — not a sale, even when reconciliation happened to record
+       -- a nonzero snapshot price. Excluded here for display only; the cost-basis
+       -- replay below still processes every 'remove' so later real sales keep the
+       -- correct running avg cost.
+       AND (it.activity != 'remove' OR it.action_type = 'Expire')
        $yearWhere
        $acctWhere
      ORDER BY t.transaction_date DESC, i.name"
