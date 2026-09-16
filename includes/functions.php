@@ -819,14 +819,21 @@ function getInvestmentPricesAsOf(string $asOf): array {
 // sold down and later repurchased at a different price — a naive average blends
 // in the cost of shares no longer held. $asOf limits the replay to transactions
 // on or before that date, for historical/point-in-time callers.
-function _investmentCostBasisPools(?string $asOf = null): array {
+//
+// $saleBasisOut, if passed an array variable by reference, is filled with the
+// avg cost/share at the moment of each sell/remove, keyed by that
+// investment_transactions.id — the single source of truth for "what was this
+// sale's cost basis", shared by every report that needs a per-sale figure
+// (e.g. Capital Gains) instead of each one re-implementing this replay.
+function _investmentCostBasisPools(?string $asOf = null, ?array &$saleBasisOut = null): array {
+    $saleBasis = [];
     $where  = ['a.is_investment_cash = 0'];
     $params = [];
     if ($asOf !== null) { $where[] = 't.transaction_date <= ?'; $params[] = $asOf; }
 
     try {
         $stmt = getDB()->prepare(
-            'SELECT it.investment_id, t.account_id, t.transaction_date, it.activity,
+            'SELECT it.id AS it_id, it.investment_id, t.account_id, t.transaction_date, it.activity,
                     it.quantity, it.price, it.commission
              FROM investment_transactions it
              JOIN transactions t ON t.id = it.transaction_id
@@ -837,6 +844,7 @@ function _investmentCostBasisPools(?string $asOf = null): array {
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
     } catch (Exception $e) {
+        $saleBasisOut = [];
         return [];
     }
 
@@ -874,15 +882,18 @@ function _investmentCostBasisPools(?string $asOf = null): array {
                 $pools[$key]['qty'] += $qty; // shares added, no cost — lowers avg cost/share
                 break;
             case 'sell': case 'remove':
+                $avgCost = 0.0;
                 if ($pools[$key]['qty'] > 0.000001) {
                     $avgCost = $pools[$key]['cost'] / $pools[$key]['qty'];
                     $pools[$key]['cost'] -= $avgCost * $qty;
                 }
+                $saleBasis[(int)$r['it_id']] = $avgCost;
                 $pools[$key]['qty'] -= $qty;
                 break;
             // div/int: income, no share/cost effect
         }
     }
+    $saleBasisOut = $saleBasis;
     return $pools;
 }
 

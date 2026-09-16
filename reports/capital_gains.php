@@ -88,91 +88,15 @@ $stmt = $db->prepare(
 $stmt->execute(array_merge($yearParams, $acctParams));
 $sellRows = $stmt->fetchAll();
 
-// ── For each sold investment+account pair, compute avg cost at time of sale
-// We need all buy transactions up to and including the sale date per inv+account.
-// Strategy: group sells by (inv_id, acct_id), then run a single cost-basis query per pair.
-// To keep it efficient we fetch all buys for the filtered accounts at once.
-
-$invAcctPairs = [];
-foreach ($sellRows as $r) {
-    $key = $r['inv_id'] . ':' . $r['acct_id'];
-    $invAcctPairs[$key] = ['inv_id' => (int)$r['inv_id'], 'acct_id' => (int)$r['acct_id']];
-}
-
-// Fetch all buy transactions per inv+acct (all time, so we can reconstruct running cost basis)
-$buysByPair = [];
-if (!empty($invAcctPairs)) {
-    // Build IN clause for pairs — use a temp join approach via PHP
-    $pairParams = [];
-    $pairWhere  = [];
-    foreach ($invAcctPairs as $pair) {
-        $pairWhere[]  = "(it.investment_id = ? AND a.id = ?)";
-        $pairParams[] = $pair['inv_id'];
-        $pairParams[] = $pair['acct_id'];
-    }
-    $pairSql = implode(' OR ', $pairWhere);
-
-    $buyStmt = $db->prepare(
-        "SELECT
-            it.investment_id AS inv_id,
-            a.id             AS acct_id,
-            t.transaction_date AS date,
-            it.activity,
-            it.quantity,
-            it.price,
-            it.commission
-         FROM investment_transactions it
-         JOIN transactions t ON t.id  = it.transaction_id
-         JOIN accounts     a ON a.id  = t.account_id
-         WHERE ({$pairSql})
-           AND it.activity IN ('buy','add','split','reinvest_div','reinvest_cap','sell','remove')
-         ORDER BY t.transaction_date ASC, it.id ASC"
-    );
-    $buyStmt->execute($pairParams);
-    foreach ($buyStmt->fetchAll() as $b) {
-        $key = $b['inv_id'] . ':' . $b['acct_id'];
-        $buysByPair[$key][] = $b;
-    }
-}
-
-// ── Compute avg cost at time of each sell ──────────────────────
-// Running avg cost: recalculate after each buy/sell in chronological order.
-// For each sell transaction (by it_id), snapshot the avg cost just before the sale.
-
-// Build a map of sell it_id → avg cost at time of sale
-$avgCostAtSale = [];
-
-foreach ($invAcctPairs as $key => $pair) {
-    $txns = $buysByPair[$key] ?? [];
-    $runningQty  = 0.0;
-    $runningCost = 0.0;
-
-    foreach ($txns as $tx) {
-        $qty  = (float)$tx['quantity'];
-        $act  = $tx['activity'];
-
-        if (in_array($act, ['buy','add','reinvest_div','reinvest_cap'])) {
-            $cost = $qty * (float)$tx['price'] + (float)$tx['commission'];
-            $runningCost += $cost;
-            $runningQty  += $qty;
-        } elseif ($act === 'split') {
-            // Split: adjust qty only, cost basis stays same (avg cost per share drops)
-            $runningQty += $qty;
-        } elseif (in_array($act, ['sell','remove'])) {
-            $avgCost = $runningQty > 0 ? $runningCost / $runningQty : 0.0;
-            // We need to identify which sell row this maps to —
-            // since sells are ordered same way, store per (inv_id, acct_id, date, qty)
-            // Use a compound key since we can't match by it_id here
-            $saleKey = $key . ':' . $tx['date'] . ':' . rtrim(rtrim(number_format($qty, 8, '.', ''), '0'), '.');
-            $avgCostAtSale[$saleKey] = $avgCost;
-
-            // Reduce running cost basis
-            $runningCost -= $avgCost * $qty;
-            $runningQty  -= $qty;
-            if ($runningQty < 0.000001) { $runningQty = 0.0; $runningCost = 0.0; }
-        }
-    }
-}
+// ── Avg cost at time of each sale ───────────────────────────────
+// Uses the shared chronological replay engine (same one Holdings, Portfolio
+// Performance, and the security page use) instead of a separate copy of this
+// logic, so a sale's cost basis here always matches what those pages show for
+// the same shares. Runs unfiltered (all accounts, no date cutoff) since a
+// sale's cost basis depends on its full purchase history, not just what this
+// report's filters happen to include; $avgCostAtSale is then looked up per
+// sale by investment_transactions.id below.
+_investmentCostBasisPools(null, $avgCostAtSale);
 
 // ── Build display rows ─────────────────────────────────────────
 $rows               = [];
@@ -183,14 +107,12 @@ $totalGainLossShort = 0.0; // placeholder — we don't track holding period
 $totalCommissions   = 0.0;
 
 foreach ($sellRows as $r) {
-    $key      = $r['inv_id'] . ':' . $r['acct_id'];
     $sellQty  = (float)$r['sell_qty'];
     $sellPrc  = (float)$r['sell_price'];
     $sellComm = (float)$r['sell_commission'];
     $proceeds = $sellQty * $sellPrc - $sellComm;
 
-    $saleKey  = $key . ':' . $r['date'] . ':' . rtrim(rtrim(number_format($sellQty, 8, '.', ''), '0'), '.');
-    $avgCost  = $avgCostAtSale[$saleKey] ?? null;
+    $avgCost   = $avgCostAtSale[(int)$r['it_id']] ?? null;
     $costBasis = $avgCost !== null ? $avgCost * $sellQty : null;
     $gainLoss  = $costBasis !== null ? $proceeds - $costBasis : null;
     $gainLossPct = ($gainLoss !== null && $costBasis > 0) ? ($gainLoss / $costBasis) * 100 : null;
