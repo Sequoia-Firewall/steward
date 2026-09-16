@@ -358,6 +358,7 @@ try {
                         $asOfDate = $csvRow['as_of_date'];
                     }
                     $symbol  = strtoupper(preg_replace('/[^A-Z0-9.]/i', '', $csvRow['symbol'] ?? ''));
+                    $cusip   = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $csvRow['cusip']  ?? ''));
                     $name    = $csvRow['security_name'] ?? '';
                     $qty     = (float)($csvRow['quantity'] ?? 0);
                     $price   = (float)($csvRow['price']    ?? 0);
@@ -369,7 +370,7 @@ try {
                     if ($qty <= 0.0 || $name === '') continue;
                     $symNorm    = strtolower(preg_replace('/[^A-Z0-9]/i', '', $symbol));
                     $key        = $symNorm !== '' ? $symNorm : strtolower($name);
-                    $snapshot[$key] = ['qty' => $qty, 'name' => $name, 'symbol' => $symbol, 'price' => $price, 'date' => $asOfDate];
+                    $snapshot[$key] = ['qty' => $qty, 'name' => $name, 'symbol' => $symbol, 'cusip' => strlen($cusip) === 9 ? $cusip : '', 'price' => $price, 'date' => $asOfDate];
                 }
 
                 if (empty($snapshot)) {

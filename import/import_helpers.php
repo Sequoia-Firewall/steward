@@ -155,31 +155,42 @@ function markDuplicates(array &$rows, int $accountId, bool $isInvestment): void 
         }
     } else {
         $stmt = $db->prepare(
-            'SELECT t.transaction_date, it.activity, t.payee, it.quantity
+            'SELECT t.transaction_date, it.activity, t.payee, it.quantity, t.amount
              FROM transactions t JOIN investment_transactions it ON it.transaction_id = t.id
              WHERE t.account_id = ?'
         );
         $stmt->execute([$accountId]);
         foreach ($stmt->fetchAll() as $r) {
-            $key = $r['transaction_date'] . '|' . $r['activity'] . '|' . mb_strtolower(trim($r['payee'])) . '|' . number_format((float)$r['quantity'], 6);
+            // Amount is included because brokers can post multiple same-day div/int
+            // entries for the same security that differ only in dollar amount —
+            // date+activity+payee+qty alone would collapse them into one match.
+            $key = $r['transaction_date'] . '|' . $r['activity'] . '|' . mb_strtolower(trim($r['payee'])) . '|' . number_format((float)$r['quantity'], 6) . '|' . number_format((float)$r['amount'], 2);
             $fuzzySet[$key] = true;
         }
     }
+
+    // fitids seen so far within this same import batch — catches a duplicate fitid
+    // inside one CSV/OFX file (not just a repeat against existing DB rows).
+    $seenInBatch = [];
 
     foreach ($rows as &$row) {
         // Exact fitid match (skip GEN: hashes — they're deterministic from content, so a
         // re-import of the same file would regenerate the same hash; use fuzzy instead)
         $fitid = $row['fitid'] ?? '';
-        if ($fitid !== '' && !str_starts_with($fitid, 'GEN:') && isset($fitidSet[$fitid])) {
-            $row['is_dup'] = true;
-            continue;
+        if ($fitid !== '' && !str_starts_with($fitid, 'GEN:')) {
+            if (isset($fitidSet[$fitid]) || isset($seenInBatch[$fitid])) {
+                $row['is_dup']       = true;
+                $seenInBatch[$fitid] = true;
+                continue;
+            }
+            $seenInBatch[$fitid] = true;
         }
 
         // Fuzzy fallback
         if (!$isInvestment) {
             $key = $row['date'] . '|' . number_format((float)$row['amount'], 2) . '|' . mb_strtolower(trim($row['payee']));
         } else {
-            $key = $row['date'] . '|' . ($row['activity'] ?? '') . '|' . mb_strtolower(trim($row['payee'])) . '|' . number_format((float)($row['quantity'] ?? 0), 6);
+            $key = $row['date'] . '|' . ($row['activity'] ?? '') . '|' . mb_strtolower(trim($row['payee'])) . '|' . number_format((float)($row['quantity'] ?? 0), 6) . '|' . number_format((float)($row['amount'] ?? 0), 2);
         }
         $row['is_dup'] = isset($fuzzySet[$key]);
     }
@@ -391,7 +402,7 @@ function getAccountHoldings(int $accountId): array {
     if ($accountId <= 0) return [];
     $db   = getDB();
     $stmt = $db->prepare(
-        'SELECT i.name, i.symbol,
+        'SELECT i.name, i.symbol, i.cusip,
                 SUM(CASE
                     WHEN it.activity IN (\'buy\',\'add\',\'reinvest_div\',\'reinvest_cap\') THEN  it.quantity
                     WHEN it.activity IN (\'sell\',\'remove\')                               THEN -it.quantity
@@ -401,7 +412,7 @@ function getAccountHoldings(int $accountId): array {
          JOIN transactions t ON t.id  = it.transaction_id
          JOIN investments   i ON i.id = it.investment_id
          WHERE t.account_id = ? AND i.is_active = 1
-         GROUP BY i.id, i.name, i.symbol
+         GROUP BY i.id, i.name, i.symbol, i.cusip
          HAVING ABS(net_qty) > 0.0001'
     );
     $stmt->execute([$accountId]);
@@ -413,7 +424,7 @@ function getAccountHoldings(int $accountId): array {
         $symNorm = strtolower(preg_replace('/[^A-Z0-9]/i', '', $sym));
         $key = $symNorm !== '' ? $symNorm : strtolower($nm);
         if ($key === '') continue;
-        $result[$key] = ['qty' => (float)$row['net_qty'], 'name' => $nm, 'symbol' => $sym];
+        $result[$key] = ['qty' => (float)$row['net_qty'], 'name' => $nm, 'symbol' => $sym, 'cusip' => trim($row['cusip'] ?? '')];
     }
     return $result;
 }
@@ -428,12 +439,17 @@ function getAccountHoldings(int $accountId): array {
 function reconcileHoldings(array $snapshot, array $currentHoldings, string $asOfDate): array {
     $rows = [];
 
-    // Build name → key maps for fallback matching when the symbol key doesn't align.
-    // This handles brokers that omit tickers for money-market / cash-equivalent rows.
+    // Build name/CUSIP → key maps for fallback matching when the symbol key doesn't
+    // align. Name handles brokers that omit tickers for money-market / cash-equivalent
+    // rows; CUSIP handles a symbol that's missing or spelled differently between the
+    // statement and steward's own records (CUSIP doesn't change when a ticker does).
     $dbByName = [];
+    $dbByCusip = [];
     foreach ($currentHoldings as $dbKey => $cur) {
         $nk = strtolower(trim($cur['name'] ?? ''));
         if ($nk !== '' && !isset($dbByName[$nk])) $dbByName[$nk] = $dbKey;
+        $ck = strtoupper(trim($cur['cusip'] ?? ''));
+        if ($ck !== '' && !isset($dbByCusip[$ck])) $dbByCusip[$ck] = $dbKey;
     }
     $snapByName = [];
     foreach ($snapshot as $snapKey => $snap) {
@@ -444,12 +460,14 @@ function reconcileHoldings(array $snapshot, array $currentHoldings, string $asOf
     $matchedDbKeys = [];
 
     foreach ($snapshot as $key => $snap) {
-        // Primary match by normalized symbol key; fallback to security name.
+        // Primary match by normalized symbol key; fallback to security name, then CUSIP.
         if (isset($currentHoldings[$key])) {
             $dbKey = $key;
         } else {
             $nk    = strtolower(trim($snap['name'] ?? ''));
-            $dbKey = ($nk !== '' && isset($dbByName[$nk])) ? $dbByName[$nk] : null;
+            $ck    = strtoupper(trim($snap['cusip'] ?? ''));
+            $dbKey = ($nk !== '' && isset($dbByName[$nk])) ? $dbByName[$nk]
+                   : (($ck !== '' && isset($dbByCusip[$ck])) ? $dbByCusip[$ck] : null);
         }
 
         $curQty = $dbKey !== null ? $currentHoldings[$dbKey]['qty'] : 0.0;
