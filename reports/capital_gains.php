@@ -77,6 +77,10 @@ $stmt = $db->prepare(
      JOIN investments   i ON i.id = it.investment_id
      JOIN accounts      a ON a.id = t.account_id
      WHERE it.activity IN ('sell','remove') AND a.is_investment_cash = 0
+       -- A zero-price 'remove' is a holdings-reconciliation share adjustment, not a
+       -- real sale — exclude it here (display only; the cost-basis replay below still
+       -- processes it so later real sales keep the correct running avg cost).
+       AND NOT (it.activity = 'remove' AND it.price = 0)
        $yearWhere
        $acctWhere
      ORDER BY t.transaction_date DESC, i.name"
@@ -307,17 +311,17 @@ include __DIR__ . '/../includes/header.php';
 <table class="table table-sm report-table">
   <thead>
     <tr>
-      <th>Security</th>
-      <th>Type</th>
-      <th>Account</th>
-      <th class="text-end">Date Sold</th>
-      <th class="text-end">Shares</th>
-      <th class="text-end">Sale Price</th>
-      <th class="text-end">Proceeds</th>
-      <th class="text-end">Avg Cost</th>
-      <th class="text-end">Cost Basis</th>
-      <th class="text-end">Gain / Loss</th>
-      <th class="text-end">Return %</th>
+      <th class="sortable" data-col="security">Security <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="sortable" data-col="type">Type <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="sortable" data-col="account">Account <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="date">Date Sold <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="shares">Shares <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="saleprice">Sale Price <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="proceeds">Proceeds <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="avgcost">Avg Cost <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="costbasis">Cost Basis <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="gainloss">Gain / Loss <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="gainlosspct">Return % <i class="bi bi-arrow-down-up sort-icon"></i></th>
     </tr>
   </thead>
   <tbody>
@@ -326,7 +330,17 @@ include __DIR__ . '/../includes/header.php';
       $glSign  = $r['gainLoss'] !== null && $r['gainLoss'] < 0 ? '-' : '+';
       $pctSign = $r['gainLossPct'] !== null && $r['gainLossPct'] >= 0 ? '+' : '';
     ?>
-    <tr>
+    <tr data-security="<?= h(strtolower($r['inv_name'])) ?>"
+        data-type="<?= h(strtolower($r['inv_type'])) ?>"
+        data-account="<?= h(strtolower($r['acct_name'])) ?>"
+        data-date="<?= h($r['date']) ?>"
+        data-shares="<?= $r['sell_qty'] ?>"
+        data-saleprice="<?= $r['sell_price'] ?>"
+        data-proceeds="<?= $r['proceeds'] ?>"
+        data-avgcost="<?= $r['avgCost'] ?? '' ?>"
+        data-costbasis="<?= $r['costBasis'] ?? '' ?>"
+        data-gainloss="<?= $r['gainLoss'] ?? '' ?>"
+        data-gainlosspct="<?= $r['gainLossPct'] ?? '' ?>">
       <td>
         <strong><?= h($r['inv_name']) ?></strong>
         <?php if ($r['symbol']): ?>
@@ -372,6 +386,51 @@ include __DIR__ . '/../includes/header.php';
     </tr>
   </tfoot>
 </table>
+
+<script>
+(function () {
+  const numCols = new Set(['date', 'shares', 'saleprice', 'proceeds', 'avgcost', 'costbasis', 'gainloss', 'gainlosspct']);
+  let sortCol = null, sortDir = 'asc';
+
+  function getVal(row, col) {
+    const raw = row.dataset[col];
+    if (raw === '' || raw === undefined || raw === null) return null;
+    return numCols.has(col) ? parseFloat(raw) : raw;
+  }
+
+  const table = document.querySelector('.report-table');
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+
+  table.querySelectorAll('th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      sortDir = (sortCol === col && sortDir === 'asc') ? 'desc' : 'asc';
+      sortCol = col;
+
+      table.querySelectorAll('th.sortable').forEach(t => {
+        const icon = t.querySelector('.sort-icon');
+        if (!icon) return;
+        icon.className = 'bi sort-icon ' + (t.dataset.col === col
+          ? (sortDir === 'asc' ? 'bi-sort-up-alt' : 'bi-sort-down-alt')
+          : 'bi-arrow-down-up');
+      });
+
+      const rows = [...tbody.querySelectorAll('tr')];
+      const dir  = sortDir === 'asc' ? 1 : -1;
+      rows.sort((a, b) => {
+        const av = getVal(a, col), bv = getVal(b, col);
+        if (av === bv)   return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+})();
+</script>
 
 <?php endif; ?>
 

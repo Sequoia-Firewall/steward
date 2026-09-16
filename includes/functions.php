@@ -851,11 +851,24 @@ function _investmentCostBasisPools(?string $asOf = null): array {
                 'cost'          => 0.0,
             ];
         }
-        $qty = (float)$r['quantity'];
+        $qty   = (float)$r['quantity'];
+        $price = (float)$r['price'];
         switch ($r['activity']) {
-            case 'buy': case 'add': case 'reinvest_div': case 'reinvest_cap':
+            case 'add':
+                if ($price <= 0.0) {
+                    // A zero-price 'add' (holdings-reconciliation ShrsIn) enters at the
+                    // current average cost, mirroring how a zero-price 'remove' below
+                    // always exits at average cost — otherwise it would dilute the avg
+                    // cost/share for every share already held, not just the new ones.
+                    $avgCost = $pools[$key]['qty'] > 0.000001 ? $pools[$key]['cost'] / $pools[$key]['qty'] : 0.0;
+                    $pools[$key]['cost'] += $avgCost * $qty;
+                    $pools[$key]['qty']  += $qty;
+                    break;
+                }
+                // fall through — a priced 'add' behaves like a buy
+            case 'buy': case 'reinvest_div': case 'reinvest_cap':
                 $pools[$key]['qty']  += $qty;
-                $pools[$key]['cost'] += $qty * (float)$r['price'] + (float)$r['commission'];
+                $pools[$key]['cost'] += $qty * $price + (float)$r['commission'];
                 break;
             case 'split':
                 $pools[$key]['qty'] += $qty; // shares added, no cost — lowers avg cost/share

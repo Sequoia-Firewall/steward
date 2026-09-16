@@ -454,13 +454,13 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
         <table class="table table-sm mb-0" id="fetchSummaryTable">
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Name</th>
-              <th>Source</th>
-              <th class="text-end fetch-summary-col-records">Records</th>
-              <th class="text-end">Last Quote</th>
-              <th class="text-end">Change %</th>
-              <th>Status</th>
+              <th class="sortable" data-col="symbol">Symbol <i class="bi bi-arrow-down-up sort-icon"></i></th>
+              <th class="sortable" data-col="name">Name <i class="bi bi-arrow-down-up sort-icon"></i></th>
+              <th class="sortable" data-col="source">Source <i class="bi bi-arrow-down-up sort-icon"></i></th>
+              <th class="text-end sortable fetch-summary-col-records" data-col="records">Records <i class="bi bi-arrow-down-up sort-icon"></i></th>
+              <th class="text-end sortable" data-col="lastquote">Last Quote <i class="bi bi-arrow-down-up sort-icon"></i></th>
+              <th class="text-end sortable" data-col="changepct">Change % <i class="bi bi-arrow-down-up sort-icon"></i></th>
+              <th class="sortable" data-col="status">Status <i class="bi bi-arrow-down-up sort-icon"></i></th>
             </tr>
           </thead>
           <tbody id="fetchSummaryBody"></tbody>
@@ -769,6 +769,13 @@ function showFetchSummary(data, mode, remember = true) {
     let statusHtml = r.status === 'ok'
       ? `<span class="text-success"><i class="bi bi-check-circle-fill"></i></span>`
       : `<span class="text-danger" title="${esc(r.message)}"><i class="bi bi-x-circle-fill"></i> ${esc(r.message)}</span>`;
+    tr.dataset.symbol    = r.symbol || '';
+    tr.dataset.name      = r.name || '';
+    tr.dataset.source    = r.source || '';
+    tr.dataset.records   = r.count ?? 0;
+    tr.dataset.lastquote = quote === null || Number.isNaN(quote) ? '' : quote;
+    tr.dataset.changepct = changePct === null || Number.isNaN(changePct) ? '' : changePct;
+    tr.dataset.status    = r.status || '';
     tr.innerHTML =
       `<td><span class="inv-symbol">${esc(r.symbol)}</span></td>` +
       `<td class="small text-muted">${esc(r.name)}</td>` +
@@ -795,6 +802,50 @@ function showFetchSummary(data, mode, remember = true) {
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// ── Fetch summary table sorting ───────────────────────────────────
+(function () {
+  const numCols = new Set(['records', 'lastquote', 'changepct']);
+  let sortCol = null, sortDir = 'asc';
+
+  function getVal(row, col) {
+    const raw = row.dataset[col];
+    if (raw === '' || raw === undefined || raw === null) return null;
+    return numCols.has(col) ? parseFloat(raw) : raw;
+  }
+
+  const table = document.getElementById('fetchSummaryTable');
+  if (!table) return;
+  const tbody = document.getElementById('fetchSummaryBody');
+
+  table.querySelectorAll('th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      sortDir = (sortCol === col && sortDir === 'asc') ? 'desc' : 'asc';
+      sortCol = col;
+
+      table.querySelectorAll('th.sortable').forEach(t => {
+        const icon = t.querySelector('.sort-icon');
+        if (!icon) return;
+        icon.className = 'bi sort-icon ' + (t.dataset.col === col
+          ? (sortDir === 'asc' ? 'bi-sort-up-alt' : 'bi-sort-down-alt')
+          : 'bi-arrow-down-up');
+      });
+
+      const rows = [...tbody.querySelectorAll('tr')];
+      const dir  = sortDir === 'asc' ? 1 : -1;
+      rows.sort((a, b) => {
+        const av = getVal(a, col), bv = getVal(b, col);
+        if (av === bv)   return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+})();
 
 // ── History modal ───────────────────────────────────────────────
 function openHistoryModal() {
