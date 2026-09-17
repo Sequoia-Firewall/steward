@@ -1064,7 +1064,13 @@ function getInvestmentPerformanceSeries(array $ids, string $fromDate, string $to
 // period (avg cost at sale time via _investmentCostBasisPools()'s $saleBasisOut,
 // the same lookup reports/capital_gains.php uses), so a position that was partly
 // or fully traded during the window isn't missing that leg of its profit.
-function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $toDate): array {
+// $includeExited additionally includes ids that were held at the start of the
+// period but fully sold out by $toDate (qty 0 at both start-of-window replay and
+// end), so a closed-out position's realized profit for the period is still shown
+// instead of the row disappearing entirely. Callers that want a portfolio-wide
+// table scoped to current holdings (e.g. reports/investment_performance.php)
+// should leave this false.
+function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $toDate, bool $includeExited = false): array {
     $ids = array_values(array_unique(array_map('intval', $ids)));
     if (empty($ids)) return [];
 
@@ -1073,13 +1079,21 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
     $aggStart = _aggregatePoolsByInvestment(_investmentCostBasisPools($dayBeforeFrom));
 
     $heldIds = array_values(array_filter($ids, fn($id) => ($aggEnd[$id]['qty'] ?? 0.0) > 0.000001));
-    if (empty($heldIds)) return [];
 
-    $priceEnd   = _investmentPricesAsOf($heldIds, $toDate);
-    $priceStart = _investmentPricesAsOf($heldIds, $dayBeforeFrom);
+    $exitedIds = [];
+    if ($includeExited) {
+        $exitedIds = array_values(array_filter($ids, fn($id) =>
+            ($aggEnd[$id]['qty'] ?? 0.0) <= 0.000001 && ($aggStart[$id]['qty'] ?? 0.0) > 0.000001
+        ));
+    }
+    $processIds = array_values(array_unique(array_merge($heldIds, $exitedIds)));
+    if (empty($processIds)) return [];
+
+    $priceEnd   = _investmentPricesAsOf($processIds, $toDate);
+    $priceStart = _investmentPricesAsOf($processIds, $dayBeforeFrom);
 
     $db   = getDB();
-    $ph   = implode(',', array_fill(0, count($heldIds), '?'));
+    $ph   = implode(',', array_fill(0, count($processIds), '?'));
     $distStmt = $db->prepare(
         "SELECT it.investment_id, t.transaction_date, t.amount, it.activity,
                 it.quantity, it.price, it.commission
@@ -1091,9 +1105,9 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
            AND t.transaction_date BETWEEN ? AND ?
          ORDER BY it.investment_id, t.transaction_date, it.id"
     );
-    $distStmt->execute(array_merge($heldIds, [$fromDate, $toDate]));
+    $distStmt->execute(array_merge($processIds, [$fromDate, $toDate]));
 
-    $distByInv = array_fill_keys($heldIds, []);
+    $distByInv = array_fill_keys($processIds, []);
     foreach ($distStmt->fetchAll() as $r) {
         $iid        = (int)$r['investment_id'];
         $isReinvest = in_array($r['activity'], ['reinvest_div', 'reinvest_cap'], true);
@@ -1134,10 +1148,10 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
            AND t.transaction_date BETWEEN ? AND ?
          ORDER BY it.investment_id, t.transaction_date, it.id"
     );
-    $salesStmt->execute(array_merge($heldIds, [$fromDate, $toDate]));
+    $salesStmt->execute(array_merge($processIds, [$fromDate, $toDate]));
 
-    $salesByInv         = array_fill_keys($heldIds, []);
-    $realizedGainLossByInv = array_fill_keys($heldIds, 0.0);
+    $salesByInv         = array_fill_keys($processIds, []);
+    $realizedGainLossByInv = array_fill_keys($processIds, 0.0);
     foreach ($salesStmt->fetchAll() as $r) {
         $iid      = (int)$r['investment_id'];
         $sellQty  = (float)$r['quantity'];
@@ -1161,7 +1175,7 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
     }
 
     $out = [];
-    foreach ($heldIds as $iid) {
+    foreach ($processIds as $iid) {
         $qty       = $aggEnd[$iid]['qty'];
         $costBasis = $aggEnd[$iid]['cost'];
         $avgCost   = $qty > 0.000001 ? $costBasis / $qty : 0.0;
@@ -1173,7 +1187,9 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
         $priceDate    = $priceEnd[$iid]['price_date'] ?? null;
         $priceAtStart = $priceStart[$iid]['price']    ?? null;
 
-        $marketValue      = $price !== null ? $price * $qty : null;
+        // A fully-exited position (qty 0) has no market value regardless of
+        // whether a later price happens to exist for it — the shares are gone.
+        $marketValue      = $qty <= 0.000001 ? 0.0 : ($price !== null ? $price * $qty : null);
         $marketValueStart = $qtyStart <= 0.000001
             ? 0.0
             : ($priceAtStart !== null ? $priceAtStart * $qtyStart : null);
@@ -1212,11 +1228,79 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
             'realizedGainLoss'        => $realizedGainLoss,
             'totalProfit'             => $totalProfit,
             'totalReturnPct'          => $totalReturnPct,
+            'returnBase'              => $returnBase,
             'distributions'           => $distByInv[$iid],
             'sales'                   => $salesByInv[$iid],
         ];
     }
     return $out;
+}
+
+// One investment's full daily price history, merged with a per-transaction-date
+// fallback price wherever there's no real price row for that date — the average
+// per-share price paid/received on any buy/sell/reinvest that day. This keeps a
+// chart usable even for a security with only a handful of manual/fetched prices.
+// $realOnly (used by the manual price editor, which edits/deletes actual
+// investment_prices rows) skips the fallback and returns only real price rows.
+// Returned rows are ordered by date and shaped for direct JSON/chart use: date,
+// open, high, low, close (always present), volume, vwap, source.
+function getInvestmentPriceHistory(int $investmentId, bool $realOnly = false): array {
+    $db = getDB();
+
+    $priceStmt = $db->prepare(
+        'SELECT price_date, open_price, high_price, low_price, close_price, volume, vwap, source
+         FROM investment_prices
+         WHERE investment_id = ?
+         ORDER BY price_date ASC'
+    );
+    $priceStmt->execute([$investmentId]);
+    $rows = $priceStmt->fetchAll();
+
+    if (!$realOnly) {
+        $byDate = [];
+        foreach ($rows as $r) {
+            $byDate[$r['price_date']] = $r;
+        }
+
+        $txnStmt = $db->prepare(
+            'SELECT t.transaction_date AS price_date,
+                    SUM(it.price * it.quantity) / SUM(it.quantity) AS close_price
+             FROM investment_transactions it
+             JOIN transactions t ON t.id = it.transaction_id
+             WHERE it.investment_id = ?
+               AND it.activity IN (\'buy\', \'sell\', \'reinvest_div\', \'reinvest_cap\')
+               AND it.price > 0
+             GROUP BY t.transaction_date'
+        );
+        $txnStmt->execute([$investmentId]);
+        foreach ($txnStmt->fetchAll() as $t) {
+            if (isset($byDate[$t['price_date']])) continue;
+            $byDate[$t['price_date']] = [
+                'price_date'  => $t['price_date'],
+                'open_price'  => null,
+                'high_price'  => null,
+                'low_price'   => null,
+                'close_price' => $t['close_price'],
+                'volume'      => null,
+                'vwap'        => null,
+                'source'      => 'transaction',
+            ];
+        }
+
+        ksort($byDate);
+        $rows = array_values($byDate);
+    }
+
+    return array_map(fn($p) => [
+        'date'   => $p['price_date'],
+        'open'   => $p['open_price']  !== null ? (float)$p['open_price']  : null,
+        'high'   => $p['high_price']  !== null ? (float)$p['high_price']  : null,
+        'low'    => $p['low_price']   !== null ? (float)$p['low_price']   : null,
+        'close'  => (float)$p['close_price'],
+        'volume' => $p['volume']      !== null ? (int)$p['volume']        : null,
+        'vwap'   => $p['vwap']        !== null ? (float)$p['vwap']        : null,
+        'source' => $p['source'],
+    ], $rows);
 }
 
 // Builds a "Total Return" overlay for a getInvestmentPerformanceSeries() line:

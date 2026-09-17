@@ -386,6 +386,66 @@ include __DIR__ . '/../includes/header.php';
     </tr>
     <?php endforeach; ?>
   </tbody>
+  <?php if (count($cpa) > 1):
+    $totCostBasis   = 0.0; $totMarketValue = 0.0; $hasNullMarket = false;
+    $totUnrealized  = 0.0; $hasNullUnrealized = false;
+    $totDivInt      = 0.0; $totReinvested  = 0.0; $totDistrib = 0.0;
+    $totRealized    = 0.0; $totProfit      = 0.0; $hasNullProfit = false;
+    $totReturnBase  = 0.0;
+    foreach ($cpa as $r) {
+        $totCostBasis  += $r['costBasis'];
+        if ($r['marketValue'] === null) $hasNullMarket = true; else $totMarketValue += $r['marketValue'];
+        if ($r['unrealizedGainLoss'] === null) $hasNullUnrealized = true; else $totUnrealized += $r['unrealizedGainLoss'];
+        $totDivInt     += $r['dividendsInterest'];
+        $totReinvested += $r['reinvestedDistributions'];
+        $totDistrib    += $r['totalDistributions'];
+        $totRealized   += $r['realizedGainLoss'];
+        if ($r['totalProfit'] === null) $hasNullProfit = true; else $totProfit += $r['totalProfit'];
+        $totReturnBase += $r['returnBase'];
+    }
+    // Matches the per-row methodology: divide aggregate profit by the SUM of
+    // each row's own average of start/end cost basis, not by the summed
+    // end-of-period cost basis alone — the latter overstates the portfolio
+    // total return for the same reason it overstates any individual row.
+    $totReturnPct = (!$hasNullProfit && $totReturnBase > 0.000001) ? ($totProfit / $totReturnBase) * 100 : null;
+    $totUglCls = $hasNullUnrealized ? '' : ($totUnrealized >= 0 ? 'amount-credit' : 'amount-debit');
+    $totRglCls = $totRealized >= 0 ? 'amount-credit' : 'amount-debit';
+    $totTpCls  = $hasNullProfit ? '' : ($totProfit >= 0 ? 'amount-credit' : 'amount-debit');
+    $totTrCls  = $totReturnPct !== null ? ($totReturnPct >= 0 ? 'amount-credit' : 'amount-debit') : '';
+  ?>
+  <tfoot>
+    <tr class="fw-bold">
+      <td>Total</td>
+      <td class="text-end">—</td>
+      <td class="text-end">—</td>
+      <td class="text-end"><?= formatMoney($totCostBasis) ?></td>
+      <td class="text-end"><?= $hasNullMarket ? '<span class="text-muted">—</span>' : formatMoney($totMarketValue) ?></td>
+      <td class="text-end <?= $totUglCls ?>">
+        <?php if (!$hasNullUnrealized): ?>
+          <?= ($totUnrealized >= 0 ? '+' : '-') . formatMoney(abs($totUnrealized)) ?>
+        <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+      </td>
+      <td class="text-end"><?= $totDivInt > 0 ? formatMoney($totDivInt) : '—' ?></td>
+      <td class="text-end"><?= $totReinvested > 0 ? formatMoney($totReinvested) : '—' ?></td>
+      <td class="text-end"><?= $totDistrib > 0 ? formatMoney($totDistrib) : '—' ?></td>
+      <td class="text-end <?= $totRealized != 0 ? $totRglCls : '' ?>">
+        <?php if ($totRealized != 0): ?>
+          <?= ($totRealized >= 0 ? '+' : '-') . formatMoney(abs($totRealized)) ?>
+        <?php else: ?>—<?php endif; ?>
+      </td>
+      <td class="text-end <?= $totTpCls ?>">
+        <?php if (!$hasNullProfit): ?>
+          <?= ($totProfit >= 0 ? '+' : '-') . formatMoney(abs($totProfit)) ?>
+        <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+      </td>
+      <td class="text-end <?= $totTrCls ?>">
+        <?php if ($totReturnPct !== null): ?>
+          <strong><?= ($totReturnPct >= 0 ? '+' : '') . number_format($totReturnPct, 2) ?>%</strong>
+        <?php else: ?><span class="text-muted">—</span><?php endif; ?>
+      </td>
+    </tr>
+  </tfoot>
+  <?php endif; ?>
 </table>
 <?php endif; ?>
 

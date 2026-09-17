@@ -23,53 +23,7 @@ if (!$investment) {
     exit;
 }
 
-$priceStmt = $db->prepare(
-    'SELECT price_date, open_price, high_price, low_price, close_price, volume, vwap, source
-     FROM investment_prices
-     WHERE investment_id = ?
-     ORDER BY price_date ASC'
-);
-$priceStmt->execute([$investmentId]);
-$rows = $priceStmt->fetchAll();
-
-// Fill in any date missing a real price with the per-share price recorded on
-// buy/sell/reinvest transactions, so the chart reflects the full history even
-// when only a handful of manual/fetched prices exist. The manual price editor
-// asks for real_only=1 since it edits/deletes actual investment_prices rows.
-if (!$realOnly) {
-    $byDate = [];
-    foreach ($rows as $r) {
-        $byDate[$r['price_date']] = $r;
-    }
-
-    $txnStmt = $db->prepare(
-        'SELECT t.transaction_date AS price_date,
-                SUM(it.price * it.quantity) / SUM(it.quantity) AS close_price
-         FROM investment_transactions it
-         JOIN transactions t ON t.id = it.transaction_id
-         WHERE it.investment_id = ?
-           AND it.activity IN (\'buy\', \'sell\', \'reinvest_div\', \'reinvest_cap\')
-           AND it.price > 0
-         GROUP BY t.transaction_date'
-    );
-    $txnStmt->execute([$investmentId]);
-    foreach ($txnStmt->fetchAll() as $t) {
-        if (isset($byDate[$t['price_date']])) continue;
-        $byDate[$t['price_date']] = [
-            'price_date'  => $t['price_date'],
-            'open_price'  => null,
-            'high_price'  => null,
-            'low_price'   => null,
-            'close_price' => $t['close_price'],
-            'volume'      => null,
-            'vwap'        => null,
-            'source'      => 'transaction',
-        ];
-    }
-
-    ksort($byDate);
-    $rows = array_values($byDate);
-}
+$priceRows = getInvestmentPriceHistory($investmentId, $realOnly);
 
 $holdingStmt = $db->prepare(
     'SELECT
@@ -119,14 +73,5 @@ echo json_encode([
             'quantity' => (float)$a['net_quantity'],
         ], $acctHoldings),
     ],
-    'prices' => array_map(fn($p) => [
-        'date'   => $p['price_date'],
-        'open'   => $p['open_price']  !== null ? (float)$p['open_price']  : null,
-        'high'   => $p['high_price']  !== null ? (float)$p['high_price']  : null,
-        'low'    => $p['low_price']   !== null ? (float)$p['low_price']   : null,
-        'close'  => (float)$p['close_price'],
-        'volume' => $p['volume']      !== null ? (int)$p['volume']        : null,
-        'vwap'   => $p['vwap']        !== null ? (float)$p['vwap']        : null,
-        'source' => $p['source'],
-    ], $rows),
+    'prices' => $priceRows,
 ]);

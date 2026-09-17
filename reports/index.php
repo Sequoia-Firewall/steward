@@ -110,6 +110,14 @@ include __DIR__ . '/../includes/header.php';
     </div>
   </a>
 
+  <a href="<?= BASE_PATH ?>/reports/security_history" class="report-card">
+    <div class="report-icon"><i class="bi bi-clock-history"></i></div>
+    <div class="report-info">
+      <div class="report-title">Security History</div>
+      <div class="report-desc">Full lifetime history for one security, including those no longer held — price chart, transactions, and cost/profit analysis, printable.</div>
+    </div>
+  </a>
+
 </div>
 
 <p class="reports-section-heading">Net Worth</p>
