@@ -345,15 +345,15 @@ include __DIR__ . '/../includes/header.php';
     </button>
     <div class="quick-ranges">
       <?php
-      $ranges = [
-        'This Year'  => [date('Y').'-01-01', date('Y-m-d')],
-        'Last Year'  => [(date('Y')-1).'-01-01', (date('Y')-1).'-12-31'],
-        'Last 12 Mo' => [date('Y-m-d', strtotime('-11 months first day of this month')), date('Y-m-d')],
-        'This Month' => [date('Y-m-01'), date('Y-m-t')],
-      ];
-      foreach ($ranges as $rangeLabel => [$s, $e]):
+      $ranges = dateRangeQuickRanges([
+        'This Year'  => 'ytd',
+        'Last Year'  => 'last_year',
+        'Last 12 Mo' => 'cm12',
+        'This Month' => 'this_month',
+      ]);
+      foreach ($ranges as $rangeLabel => [$tok, $s, $e]):
       ?>
-      <a href="?start=<?= $s ?>&end=<?= $e ?><?= $acctQs ?>"
+      <a href="?dr=<?= $tok ?><?= $acctQs ?>"
          class="btn btn-sm btn-outline-secondary<?= ($startDate === $s && $endDate === $e) ? ' active' : '' ?>">
         <?= $rangeLabel ?>
       </a>

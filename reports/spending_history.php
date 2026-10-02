@@ -284,14 +284,14 @@ include __DIR__ . '/../includes/header.php';
     </button>
     <div class="quick-ranges">
       <?php
-      $qRanges = [
-        '12 Mo'     => [date('Y-m-01', strtotime('-11 months')), date('Y-m-d')],
-        'This Year' => [date('Y').'-01-01', date('Y-m-d')],
-        'Last Year' => [(date('Y')-1).'-01-01', (date('Y')-1).'-12-31'],
-        '5 Years'   => [(date('Y')-4).'-01-01', date('Y-m-d')],
-      ];
-      foreach ($qRanges as $lbl => [$s, $e]): ?>
-      <a href="?start=<?= $s ?>&end=<?= $e ?>&period=<?= $periodMode ?><?= $acctQs . $catQs . $buildExcludeQs($excludeIds) ?>"
+      $qRanges = dateRangeQuickRanges([
+        '12 Mo'     => 'cm12',
+        'This Year' => 'ytd',
+        'Last Year' => 'last_year',
+        '5 Years'   => 'cy5',
+      ]);
+      foreach ($qRanges as $lbl => [$tok, $s, $e]): ?>
+      <a href="?dr=<?= $tok ?>&period=<?= $periodMode ?><?= $acctQs . $catQs . $buildExcludeQs($excludeIds) ?>"
          class="btn btn-sm btn-outline-secondary<?= ($startDate===$s&&$endDate===$e)?' active':'' ?>"><?= $lbl ?></a>
       <?php endforeach; ?>
     </div>

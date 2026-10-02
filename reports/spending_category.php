@@ -213,16 +213,16 @@ include __DIR__ . '/../includes/header.php';
     </button>
     <div class="quick-ranges">
       <?php
-      $ranges  = [
-        'This Month'   => [date('Y-m-01'), date('Y-m-t')],
-        'Last Month'   => [date('Y-m-01', strtotime('first day of last month')), date('Y-m-t', strtotime('last day of last month'))],
-        'Last 90 Days' => [date('Y-m-d', strtotime('-89 days')), date('Y-m-d')],
-        'This Year'    => [date('Y').'-01-01', date('Y').'-12-31'],
-        'Last Year'    => [(date('Y')-1).'-01-01', (date('Y')-1).'-12-31'],
-      ];
-      foreach ($ranges as $rangeLabel => [$s, $e]):
+      $ranges = dateRangeQuickRanges([
+        'This Month'   => 'this_month',
+        'Last Month'   => 'last_month',
+        'Last 90 Days' => 'last90',
+        'This Year'    => 'this_year',
+        'Last Year'    => 'last_year',
+      ]);
+      foreach ($ranges as $rangeLabel => [$tok, $s, $e]):
       ?>
-      <a href="?start=<?= $s ?>&end=<?= $e ?><?= $viewQs . $acctQs . $payeeQs . $buildExcludeQs($excludeIds) ?>" class="btn btn-sm btn-outline-secondary
+      <a href="?dr=<?= $tok ?><?= $viewQs . $acctQs . $payeeQs . $buildExcludeQs($excludeIds) ?>" class="btn btn-sm btn-outline-secondary
         <?= ($startDate === $s && $endDate === $e) ? ' active' : '' ?>"><?= $rangeLabel ?></a>
       <?php endforeach; ?>
     </div>

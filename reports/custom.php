@@ -887,27 +887,41 @@ include __DIR__ . '/../includes/header.php';
       $__srPath = substr($__srPath, strlen($__srBase));
   }
   $__srUrl    = $__srPath . (!empty($__srQ) ? '?' . http_build_query($__srQ) : '');
+  $__srVar    = reportUrlDateVariants($__srUrl);
   $__srList   = getSavedCustomReports();
   $__srId     = null;
   $__srTitle  = '';
+  $__srSavedUrl = null;
   foreach ($__srList as $__sr) {
-      if ($__sr['url'] === $__srUrl) { $__srId = (int)$__sr['id']; $__srTitle = $__sr['title']; break; }
+      if (in_array($__sr['url'], array_filter([$__srUrl, $__srVar['literal'], $__srVar['relative']]), true)) {
+          $__srId = (int)$__sr['id']; $__srTitle = $__sr['title']; $__srSavedUrl = $__sr['url']; break;
+      }
   }
   $__isSaved = $__srId !== null;
+  $__srKeepRel = $__srVar['relative'] !== null
+      && ($__srSavedUrl === null || $__srSavedUrl === $__srVar['relative']);
   ?>
   <button type="button"
           id="btnSaveReport"
           class="btn btn-sm <?= $__isSaved ? 'btn-warning' : 'btn-outline-secondary' ?>"
           data-saved="<?= $__isSaved ? '1' : '0' ?>"
           data-save-id="<?= (int)$__srId ?>"
-          data-url="<?= h($__srUrl) ?>"
+          data-url="<?= h($__srVar['literal']) ?>"
+          data-url-relative="<?= h($__srVar['relative'] ?? '') ?>"
           data-default-title="<?= h($reportTitle ?: 'Custom Report') ?>"
+          data-saved-title="<?= h($__srTitle) ?>"
           data-csrf="<?= h(csrfToken()) ?>"
           onclick="toggleSaveReport(this)"
           title="<?= $__isSaved ? 'Remove from Saved Reports' : 'Save to Reports index' ?>">
     <i class="bi <?= $__isSaved ? 'bi-bookmark-fill' : 'bi-bookmark-plus' ?>"></i>
     <span><?= $__isSaved ? 'Saved' : 'Save Report' ?></span>
   </button>
+  <?php if ($__srVar['relative'] !== null): ?>
+  <div class="form-check form-check-inline small mb-0 ms-1" title="Save with dates that move with today (<?= h(dateRangeTokenLabel($__srVar['token'])) ?>) instead of fixed dates">
+    <input class="form-check-input" type="checkbox" id="crKeepRelative"<?= $__srKeepRel ? ' checked' : '' ?>>
+    <label class="form-check-label" for="crKeepRelative">Keep dates relative to today</label>
+  </div>
+  <?php endif; ?>
   <?php if ($queryRows > 0): ?>
   <button type="button" class="btn btn-sm btn-outline-primary" id="btnCreateGraph" onclick="CRG.toggle(this)">
     <i class="bi bi-bar-chart-line"></i> Create Graph
@@ -1056,6 +1070,7 @@ include __DIR__ . '/../includes/header.php';
       <div class="cr-field">
         <label>Date From</label>
         <input type="date" name="start" class="form-control form-control-sm" value="<?= h($startDate) ?>">
+        <input type="hidden" name="dr" id="crDateRange" value="<?= h(currentDateRangePreset()['token'] ?? '') ?>">
       </div>
       <div class="cr-field">
         <label>Date To</label>
@@ -1073,18 +1088,19 @@ include __DIR__ . '/../includes/header.php';
         <label>Quick Range</label>
         <div class="d-flex flex-wrap gap-1">
           <?php
-          $qr = [
-            'This Month' => [date('Y-m-01'), date('Y-m-t')],
-            'Last Month' => [date('Y-m-01',strtotime('first day of last month')), date('Y-m-t',strtotime('last day of last month'))],
-            'This Year'  => [date('Y').'-01-01', date('Y').'-12-31'],
-            'Last Year'  => [(date('Y')-1).'-01-01', (date('Y')-1).'-12-31'],
-            'Last 90d'   => [date('Y-m-d',strtotime('-89 days')), date('Y-m-d')],
-            'All'        => [$minTxnDate, 'today'],
-          ];
-          foreach ($qr as $lbl => [$s, $e]):
+          $qr = dateRangeQuickRanges([
+            'This Month' => 'this_month',
+            'Last Month' => 'last_month',
+            'This Year'  => 'this_year',
+            'Last Year'  => 'last_year',
+            'Last 90d'   => 'last90',
+          ]);
+          $qr['All'] = ['', $minTxnDate, 'today'];
+          $__crPreset = currentDateRangePreset()['token'] ?? '';
+          foreach ($qr as $lbl => [$tok, $s, $e]):
           ?>
-          <button type="button" class="btn btn-sm btn-outline-secondary cr-qr-btn"
-                  data-start="<?= $s ?>" data-end="<?= $e ?>"><?= $lbl ?></button>
+          <button type="button" class="btn btn-sm cr-qr-btn <?= ($tok !== '' && $tok === $__crPreset) ? 'btn-secondary' : 'btn-outline-secondary' ?>"
+                  data-token="<?= h($tok) ?>" data-start="<?= $s ?>" data-end="<?= $e ?>"><?= $lbl ?></button>
           <?php endforeach; ?>
         </div>
       </div>
@@ -1735,8 +1751,29 @@ document.getElementById('crEndDisplay').addEventListener('change', function() {
 });
 
 // ── Quick-range buttons ───────────────────────────────────────
+// A quick range with a token is kept as dr=<token> (resolved against today on every
+// load); editing either date by hand turns it back into a literal range.
+function crSetDateToken(tok) {
+  document.getElementById('crDateRange').value = tok || '';
+  document.querySelectorAll('.cr-qr-btn').forEach(b => {
+    const on = !!tok && b.dataset.token === tok;
+    b.classList.toggle('btn-secondary', on);
+    b.classList.toggle('btn-outline-secondary', !on);
+  });
+}
+document.querySelector('#crForm [name="start"]').addEventListener('change', () => crSetDateToken(''));
+document.getElementById('crEndDisplay').addEventListener('change', () => crSetDateToken(''));
+document.getElementById('crTodayBtn').addEventListener('click', () => crSetDateToken(''));
+document.getElementById('crForm').addEventListener('submit', function () {
+  const dr = document.getElementById('crDateRange');
+  const strip = dr.value ? [this.querySelector('[name="start"]'), document.getElementById('crEndValue')] : [dr];
+  strip.forEach(el => el.dataset.name = el.getAttribute('name'));
+  strip.forEach(el => el.removeAttribute('name'));
+  window.addEventListener('pageshow', () => strip.forEach(el => el.setAttribute('name', el.dataset.name)), { once: true });
+});
 document.querySelectorAll('.cr-qr-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    crSetDateToken(btn.dataset.token);
     document.querySelector('[name="start"]').value = btn.dataset.start;
     const endVal  = btn.dataset.end;
     const display = document.getElementById('crEndDisplay');
@@ -2191,6 +2228,29 @@ CRG.restoreAndDraw(<?= json_encode($savedGraphConfig) ?>);
 <?php endif; ?>
 
 // ── Save / Remove custom report ───────────────────────────────
+function crReportUrl() {
+  const btn = document.getElementById('btnSaveReport');
+  const chk = document.getElementById('crKeepRelative');
+  if (!btn) return null;
+  return (chk && chk.checked && btn.dataset.urlRelative) ? btn.dataset.urlRelative : btn.dataset.url;
+}
+// Used by the Add-to-Dashboard toggle in report_fav_btn.php
+window.__reportFavUrl = crReportUrl;
+// Flipping the checkbox on an already-saved report re-points its stored URL
+document.getElementById('crKeepRelative')?.addEventListener('change', function () {
+  const btn = document.getElementById('btnSaveReport');
+  if (!btn || btn.dataset.saved !== '1') return;
+  fetch('<?= BASE_PATH ?>/reports/favorite_save', {
+    method: 'POST',
+    body: new URLSearchParams({
+      csrf_token: btn.dataset.csrf, action: 'rename', type: 'saved',
+      id: btn.dataset.saveId, title: btn.dataset.savedTitle || btn.dataset.defaultTitle, url: crReportUrl(),
+    }),
+  })
+  .then(r => r.json())
+  .then(json => showToast(json.ok ? (this.checked ? 'Dates now relative to today.' : 'Dates now fixed.') : (json.error || 'Error updating report.'), json.ok ? 'success' : 'error'))
+  .catch((e) => { console.error(e); showToast('Network error.', 'error'); });
+});
 function toggleSaveReport(btn) {
   const saved  = btn.dataset.saved === '1';
   const span   = btn.querySelector('span');
@@ -2210,7 +2270,7 @@ function toggleSaveReport(btn) {
     const body = new URLSearchParams({
       csrf_token: btn.dataset.csrf,
       action: 'add',
-      url:    btn.dataset.url,
+      url:    crReportUrl(),
       title:  title,
       icon:   'bi-sliders2',
       type:   'saved',
@@ -2222,6 +2282,7 @@ function toggleSaveReport(btn) {
         if (!json.ok) { showToast(json.error || 'Error saving report.', 'error'); btn.disabled = false; return; }
         btn.dataset.saved  = '1';
         btn.dataset.saveId = json.id;
+        btn.dataset.savedTitle = title;
         btn.classList.replace('btn-outline-secondary', 'btn-warning');
         icon.className = 'bi bi-bookmark-fill';
         span.textContent = 'Saved';

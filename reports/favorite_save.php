@@ -64,7 +64,9 @@ if ($action === 'add') {
 } elseif ($action === 'rename') {
     $id    = (int)($_POST['id'] ?? 0);
     $title = trim($_POST['title'] ?? '');
-    if (!$id || !$title) {
+    $url   = trim($_POST['url'] ?? '');
+    if ($url !== '' && !str_starts_with($url, '/')) $url = '';
+    if (!$id || ($title === '' && $url === '')) {
         echo json_encode(['ok' => false, 'error' => 'ID and title required.']);
         exit;
     }
@@ -74,13 +76,18 @@ if ($action === 'add') {
         json_decode($rawGC);
         if (json_last_error() === JSON_ERROR_NONE) $graphConfig = $rawGC;
     }
-    if ($graphConfig !== null) {
-        $db->prepare('UPDATE favorite_reports SET title = ?, graph_config = ? WHERE id = ? AND type = ?')
-           ->execute([$title, $graphConfig, $id, 'saved']);
-    } else {
-        $db->prepare('UPDATE favorite_reports SET title = ? WHERE id = ? AND type = ?')
-           ->execute([$title, $id, 'saved']);
-    }
+    // Optional new URL — lets a rename switch a saved report between literal
+    // dates and dates relative to today (dr=<token>).
+    // A blank title leaves the title alone (used to re-point a dashboard favorite).
+    $sets = [];
+    $args = [];
+    if ($title !== '')         { $sets[] = 'title = ?';        $args[] = $title; }
+    if ($url !== '')           { $sets[] = 'url = ?';          $args[] = $url; }
+    if ($graphConfig !== null) { $sets[] = 'graph_config = ?'; $args[] = $graphConfig; }
+    $args[] = $id;
+    $args[] = ($_POST['type'] ?? '') === 'dashboard' ? 'dashboard' : 'saved';
+    $db->prepare('UPDATE favorite_reports SET ' . implode(', ', $sets) . ' WHERE id = ? AND type = ?')
+       ->execute($args);
     echo json_encode(['ok' => true, 'id' => $id]);
 
 } elseif ($action === 'remove') {

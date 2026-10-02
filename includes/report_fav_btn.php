@@ -28,19 +28,40 @@ $_favUrl  = $_favPath . (!empty($_favQ) ? '?' . http_build_query($_favQ) : '');
 $_icon    = $reportFavIcon ?? 'bi-file-earmark-bar-graph';
 $_title   = $reportFavTitle ?? 'Report';
 
+// Literal vs. relative-to-today forms of this URL. $startDate/$endDate are the
+// dates the including report resolved (used for range=month/year style reports).
+$_favVariants = reportUrlDateVariants(
+    $_favUrl,
+    isset($startDate) && is_string($startDate) ? $startDate : null,
+    isset($endDate)   && is_string($endDate)   ? $endDate   : null
+);
+$_favUrlLiteral  = $_favVariants['literal'];
+$_favUrlRelative = $_favVariants['relative'];
+$_favRelLabel    = $_favVariants['token'] ? dateRangeTokenLabel($_favVariants['token']) : '';
+$_favUrlMatches  = array_filter([$_favUrl, $_favUrlLiteral, $_favUrlRelative]);
+
 // Check dashboard favourites
-$_dashFavId = null;
+$_dashFavId  = null;
+$_dashFavUrl = null;
 foreach (getFavoriteReports() as $_f) {
-    if ($_f['url'] === $_favUrl) { $_dashFavId = (int)$_f['id']; break; }
+    if (in_array($_f['url'], $_favUrlMatches, true)) { $_dashFavId = (int)$_f['id']; $_dashFavUrl = $_f['url']; break; }
 }
 $_isDashFaved = $_dashFavId !== null;
 
 // Check saved reports
 $_savedFavId    = null;
 $_savedFavTitle = null;
+$_savedFavUrl   = null;
 foreach (getSavedCustomReports() as $_s) {
-    if ($_s['url'] === $_favUrl) { $_savedFavId = (int)$_s['id']; $_savedFavTitle = $_s['title']; break; }
+    if (in_array($_s['url'], $_favUrlMatches, true)) {
+        $_savedFavId = (int)$_s['id']; $_savedFavTitle = $_s['title']; $_savedFavUrl = $_s['url']; break;
+    }
 }
+// Default the checkbox to relative whenever a token fits, unless this report is
+// already saved/favorited with literal dates.
+$_favMatchedUrl = $_savedFavUrl ?? $_dashFavUrl;
+$_favKeepRelative = $_favUrlRelative !== null
+    && ($_favMatchedUrl === null || $_favMatchedUrl === $_favUrlRelative);
 $_isSavedFaved = $_savedFavId !== null;
 $_anyFaved     = $_isDashFaved || $_isSavedFaved;
 
@@ -52,7 +73,7 @@ if (!empty($reportFavDashOnly)):
         class="btn btn-sm <?= $_isDashFaved ? 'btn-warning' : 'btn-outline-secondary' ?>"
         data-faved="<?= $_isDashFaved ? '1' : '0' ?>"
         data-fav-id="<?= (int)$_dashFavId ?>"
-        data-url="<?= h($_favUrl) ?>"
+        data-url="<?= h($_favKeepRelative ? $_favUrlRelative : $_favUrlLiteral) ?>"
         data-title="<?= h($_title) ?>"
         data-icon="<?= h($_icon) ?>"
         data-csrf="<?= h(csrfToken()) ?>"
@@ -67,9 +88,11 @@ function toggleReportFav(btn) {
   const icon   = btn.querySelector('.bi');
   const action = faved ? 'remove' : 'add';
   btn.disabled = true;
+  // Pages in this mode (custom.php) may expose their own "keep dates relative" choice
+  const url = typeof window.__reportFavUrl === 'function' ? window.__reportFavUrl() : btn.dataset.url;
   const body = new URLSearchParams({
     csrf_token: btn.dataset.csrf, action,
-    id: btn.dataset.favId, url: btn.dataset.url,
+    id: btn.dataset.favId, url,
     title: btn.dataset.title, icon: btn.dataset.icon,
   });
   const graphCfg = typeof window.__reportGraphConfig === 'function' ? window.__reportGraphConfig() : null;
@@ -118,6 +141,18 @@ function toggleReportFav(btn) {
         <i class="bi <?= $_isDashFaved ? 'bi-grid-fill text-warning' : 'bi-grid' ?> me-2" id="favDashIcon"></i><span id="favDashLabel"><?= $_isDashFaved ? 'Remove from Dashboard' : 'Add to Dashboard' ?></span>
       </button>
     </li>
+    <?php if ($_favUrlRelative !== null): ?>
+    <li><hr class="dropdown-divider"></li>
+    <li class="px-3 py-1" onclick="event.stopPropagation()">
+      <div class="form-check small mb-0">
+        <input class="form-check-input" type="checkbox" id="favKeepRelative"<?= $_favKeepRelative ? ' checked' : '' ?>>
+        <label class="form-check-label" for="favKeepRelative">
+          Keep dates relative to today
+          <span class="text-muted d-block"><?= h($_favRelLabel) ?></span>
+        </label>
+      </div>
+    </li>
+    <?php endif; ?>
     <li><hr class="dropdown-divider"></li>
     <li>
       <button class="dropdown-item" onclick="favCopyLink()">
@@ -151,7 +186,12 @@ function toggleReportFav(btn) {
 <script>
 (function () {
   const CSRF        = <?= json_encode(csrfToken()) ?>;
-  const FAV_URL     = <?= json_encode($_favUrl) ?>;
+  const URL_LITERAL  = <?= json_encode($_favUrlLiteral) ?>;
+  const URL_RELATIVE = <?= json_encode($_favUrlRelative) ?>;
+  function favUrl() {
+    const chk = document.getElementById('favKeepRelative');
+    return (URL_RELATIVE && chk && chk.checked) ? URL_RELATIVE : URL_LITERAL;
+  }
   const FAV_ICON    = <?= json_encode($_icon) ?>;
   const DEFAULT_TTL = <?= json_encode($_title) ?>;
   let savedId   = <?= (int)$_savedFavId ?>;
@@ -184,7 +224,7 @@ function toggleReportFav(btn) {
     const action = savedId > 0 ? 'rename' : 'add';
     const params = new URLSearchParams({
       csrf_token: CSRF, action,
-      id: savedId, url: FAV_URL,
+      id: savedId, url: favUrl(),
       title: name, icon: FAV_ICON, type: 'saved',
     });
     const graphCfg = typeof window.__reportGraphConfig === 'function' ? window.__reportGraphConfig() : null;
@@ -212,6 +252,25 @@ function toggleReportFav(btn) {
     if (e.key === 'Enter') { e.preventDefault(); doSaveAs(); }
   });
 
+  /* ── Keep dates relative: re-point existing saved/dashboard entries ── */
+  const relChk = document.getElementById('favKeepRelative');
+  if (relChk) relChk.addEventListener('change', function () {
+    const url = favUrl();
+    const jobs = [];
+    if (savedId > 0) jobs.push({ id: savedId, title: savedName, type: 'saved' });
+    if (dashId  > 0) jobs.push({ id: dashId,  title: '',        type: 'dashboard' });
+    if (!jobs.length) return;
+    Promise.all(jobs.map(j => fetch('<?= BASE_PATH ?>/reports/favorite_save.php', {
+      method: 'POST',
+      body: new URLSearchParams({ csrf_token: CSRF, action: 'rename', id: j.id, title: j.title, url, type: j.type }),
+    }).then(r => r.json())))
+    .then(res => {
+      if (res.every(j => j.ok)) showToast(relChk.checked ? 'Dates now relative to today.' : 'Dates now fixed.', 'success');
+      else showToast('Error updating saved report.', 'error');
+    })
+    .catch((e) => { console.error(e); showToast('Network error.', 'error'); });
+  });
+
   /* ── Add / Remove from Dashboard ──────────────────────────── */
   window.favToggleDash = function (btn) {
     const faved  = btn.dataset.faved === '1';
@@ -219,7 +278,7 @@ function toggleReportFav(btn) {
     btn.disabled = true;
     const dashParams = new URLSearchParams({
       csrf_token: CSRF, action,
-      id: btn.dataset.favId, url: FAV_URL,
+      id: btn.dataset.favId, url: favUrl(),
       title: savedName, icon: FAV_ICON, type: 'dashboard',
     });
     const graphCfg = typeof window.__reportGraphConfig === 'function' ? window.__reportGraphConfig() : null;
@@ -250,7 +309,7 @@ function toggleReportFav(btn) {
 
   /* ── Copy Link ─────────────────────────────────────────────── */
   window.favCopyLink = function () {
-    const url = window.location.origin + '<?= BASE_PATH ?>' + FAV_URL;
+    const url = window.location.origin + '<?= BASE_PATH ?>' + favUrl();
     if (navigator.clipboard) {
       navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard.', 'success'));
     } else {

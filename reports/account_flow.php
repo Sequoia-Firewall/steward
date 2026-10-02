@@ -280,17 +280,18 @@ include __DIR__ . '/../includes/header.php';
       <i class="bi bi-download"></i> CSV
     </button>
     <div class="quick-ranges">
+      <?php $__preset = currentDateRangePreset()['token'] ?? null; ?>
       <?php $acctQs = '&acct=' . $selAcctId; ?>
-      <a href="?range=month<?= $acctQs ?>"
-         class="btn btn-sm btn-outline-secondary<?= $range === 'month' ? ' active' : '' ?>">This Month</a>
+      <a href="?dr=this_month<?= $acctQs ?>"
+         class="btn btn-sm btn-outline-secondary<?= ($range === 'month' || $__preset === 'this_month') ? ' active' : '' ?>">This Month</a>
       <?php foreach ($years as $y): ?>
       <a href="?range=year&year=<?= $y ?><?= $acctQs ?>"
          class="btn btn-sm btn-outline-secondary<?= ($range === 'year' && isset($selYear) && $selYear == $y) ? ' active' : '' ?>"><?= $y ?></a>
       <?php endforeach; ?>
-      <a href="?range=last30<?= $acctQs ?>"
-         class="btn btn-sm btn-outline-secondary<?= $range === 'last30' ? ' active' : '' ?>">Last 30 Days</a>
+      <a href="?dr=last30<?= $acctQs ?>"
+         class="btn btn-sm btn-outline-secondary<?= ($range === 'last30' || $__preset === 'last30') ? ' active' : '' ?>">Last 30 Days</a>
       <a href="#" onclick="setCustomRange(); return false;"
-         class="btn btn-sm btn-outline-secondary<?= $range === 'custom' ? ' active' : '' ?>">Custom…</a>
+         class="btn btn-sm btn-outline-secondary<?= ($range === 'custom' && !in_array($__preset, ['this_month', 'last30'], true)) ? ' active' : '' ?>">Custom…</a>
     </div>
   </div>
 </form>

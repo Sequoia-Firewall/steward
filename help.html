@@ -1089,8 +1089,36 @@ pre code {
       <li>Apply filters: date range, account, category type, and more. Use the <strong>account-type quick-filter buttons</strong> above the account list to select or deselect all accounts of a given type at once.</li>
       <li>Add a chart (bar, line, pie, area).</li>
       <li>Export to <strong>CSV</strong> or <strong>XLSX</strong>.</li>
-      <li>Save the configuration as a <strong>Favorite</strong> for one-click access from the dashboard.</li>
+      <li>Save the configuration as a <strong>Favorite</strong> for one-click access from the dashboard. Tick <strong>Keep dates relative to today</strong> next to <em>Save Report</em> to have a quick range (e.g. <em>Last Month</em>) roll forward instead of keeping fixed dates.</li>
     </ul>
+
+    <h3>Relative Date Ranges in Saved Reports</h3>
+    <p>
+      The quick-range buttons on date-range reports (<em>This Month</em>, <em>Last 12 Mo</em>, <em>Last Year</em>, &hellip;)
+      put a relative range in the address instead of fixed dates, e.g. <code>?dr=last_month</code>. The range is worked out
+      against today's date every time the report opens, so a saved report or dashboard favorite for <em>Last Month</em>
+      always shows the previous month, not the month it was saved in. Changing other filters keeps the relative range;
+      typing your own dates switches back to fixed dates.
+    </p>
+    <p>
+      In a report's <strong>Save</strong> dropdown, <strong>Keep dates relative to today</strong> appears whenever the
+      current dates match one of the ranges below (even if you entered them by hand). It is ticked by default; untick it
+      to save the exact dates instead. Flipping it on a report that is already saved or on the dashboard updates the
+      saved link immediately. The <em>Account Balances</em> report leaves out the <em>As of</em> date when it is today,
+      so a saved copy always shows current balances.
+    </p>
+    <table class="feature-table">
+      <tr><th style="width:220px">Token</th><th>Range</th></tr>
+      <tr><td><code>today</code></td><td>Today only</td></tr>
+      <tr><td><code>this_month</code> / <code>last_month</code></td><td>The whole current / previous calendar month</td></tr>
+      <tr><td><code>this_quarter</code> / <code>last_quarter</code></td><td>The whole current / previous calendar quarter</td></tr>
+      <tr><td><code>this_year</code></td><td>January 1 &ndash; December 31 of the current year</td></tr>
+      <tr><td><code>ytd</code></td><td>January 1 of the current year through today</td></tr>
+      <tr><td><code>last_year</code></td><td>The whole previous calendar year</td></tr>
+      <tr><td><code>last30</code> / <code>last90</code></td><td>The last 30 / 90 days, including today</td></tr>
+      <tr><td><code>cmN</code> (e.g. <code>cm12</code>)</td><td>The last N calendar months including the current one, through today</td></tr>
+      <tr><td><code>cyN</code> (e.g. <code>cy5</code>)</td><td>The last N calendar years including the current one, through today</td></tr>
+    </table>
 
     <!-- ════════════════════════════════════════════════════ -->
     <span class="anchor" id="search"></span>

@@ -2218,3 +2218,7 @@ function advanceDueDate(string $date, string $frequency): ?string {
         date_default_timezone_set($tz);
     }
 })();
+
+// Relative date-range presets (dr=<token>) — must run after the timezone is set
+require_once __DIR__ . '/date_presets.php';
+applyDateRangePreset();

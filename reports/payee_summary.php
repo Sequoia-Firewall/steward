@@ -150,13 +150,13 @@ include __DIR__ . '/../includes/header.php';
     </button>
     <div class="quick-ranges">
       <?php
-      $ranges = [
-        'This Month' => [date('Y-m-01'), date('Y-m-t')],
-        'This Year'  => [date('Y').'-01-01', date('Y').'-12-31'],
-        'Last Year'  => [(date('Y')-1).'-01-01', (date('Y')-1).'-12-31'],
-      ];
-      foreach ($ranges as $lbl => [$s, $e]): ?>
-      <a href="?start=<?= $s ?>&end=<?= $e ?>&type=<?= h($txnType) ?>&limit=<?= urlencode($limitRaw) ?><?= $acctQs . $buildExcludeQs($excludePayees) ?>"
+      $ranges = dateRangeQuickRanges([
+        'This Month' => 'this_month',
+        'This Year'  => 'this_year',
+        'Last Year'  => 'last_year',
+      ]);
+      foreach ($ranges as $lbl => [$tok, $s, $e]): ?>
+      <a href="?dr=<?= $tok ?>&type=<?= h($txnType) ?>&limit=<?= urlencode($limitRaw) ?><?= $acctQs . $buildExcludeQs($excludePayees) ?>"
          class="btn btn-sm btn-outline-secondary<?= ($startDate===$s&&$endDate===$e)?' active':'' ?>"><?= $lbl ?></a>
       <?php endforeach; ?>
     </div>
