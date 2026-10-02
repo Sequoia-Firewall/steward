@@ -71,9 +71,11 @@ if ($txnId) {
     }
 }
 
-// ── Duplicate check/reference number warning ───────────────────
+// ── Duplicate check number warning ─────────────────────────────
+// Only purely-numeric num values are checked — reference tags like DEP, EFT and
+// ATM repeat by design and shouldn't trigger a duplicate warning.
 $confirmDupNum = $_POST['confirm_duplicate_num'] ?? '';
-if ($num !== '' && $type !== 'investment' && $confirmDupNum !== '1') {
+if ($num !== '' && $type !== 'investment' && ctype_digit($num) && $confirmDupNum !== '1') {
     $dupStmt = $db->prepare(
         'SELECT id FROM transactions WHERE account_id = ? AND num = ? AND id != ? LIMIT 1'
     );
