@@ -263,9 +263,10 @@ if ($type === 'investment') {
                 'UPDATE transactions SET transaction_date=?, payee=?, amount=?, cleared_status=?, memo=?, updated_at=NOW() WHERE id=?'
             )->execute([$date, $payee, $invAmount, $cleared, $memo, $txnId]);
 
-            $existCheck = $db->prepare('SELECT id FROM investment_transactions WHERE transaction_id=?');
+            $existCheck = $db->prepare('SELECT activity FROM investment_transactions WHERE transaction_id=?');
             $existCheck->execute([$txnId]);
-            if ($existCheck->fetchColumn()) {
+            $oldActivity = $existCheck->fetchColumn();
+            if ($oldActivity !== false) {
                 $db->prepare(
                     'UPDATE investment_transactions SET investment_id=?, activity=?, quantity=?, price=?, commission=? WHERE transaction_id=?'
                 )->execute([$investmentId, $activity, $qty, $price, $commission, $txnId]);
@@ -276,9 +277,31 @@ if ($type === 'investment') {
             }
 
             // Update or create paired cash transaction
-            $pairRow = $db->prepare('SELECT transfer_pair_id FROM transactions WHERE id=?');
+            $pairRow = $db->prepare(
+                'SELECT t.transfer_pair_id, p.account_id FROM transactions t
+                 LEFT JOIN transactions p ON p.id = t.transfer_pair_id WHERE t.id=?'
+            );
             $pairRow->execute([$txnId]);
-            $pairId = (int)($pairRow->fetchColumn() ?? 0);
+            $pairInfo    = $pairRow->fetch() ?: [];
+            $pairId      = (int)($pairInfo['transfer_pair_id'] ?? 0);
+            $pairAcctId  = (int)($pairInfo['account_id'] ?? 0);
+            $targetCash  = ($activity === 'sell') ? $cashAcctToId : $cashAcctId;
+
+            // Drop the existing cash leg if the activity no longer has a cash side
+            // (add/remove/split/reinvest, or buy/sell without a linked cash account),
+            // if the activity changed — buy draws from the "from" cash account as a
+            // transfer, sell pays into the "to" account, div/int is a deposit — or if
+            // a different cash account was picked, since an in-place update would
+            // leave the wrong account and type. The create branches below rebuild it.
+            $needsCash = in_array($activity, ['div', 'int'])
+                || (in_array($activity, ['buy', 'sell']) && $hasLinkedCash);
+            $cashAcctChanged = $targetCash && $targetCash !== $pairAcctId;
+            if ($pairId && (!$needsCash || $oldActivity !== $activity || $cashAcctChanged)) {
+                $db->prepare('UPDATE transactions SET transfer_pair_id=NULL WHERE id=?')->execute([$txnId]);
+                $db->prepare('DELETE FROM transactions WHERE id=?')->execute([$pairId]);
+                $pairId = 0;
+            }
+
             if ($pairId && in_array($activity, ['buy','sell'])) {
                 $cashAmount = ($activity === 'buy') ? -abs($invAmount) : abs($invAmount);
                 $db->prepare(
