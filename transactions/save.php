@@ -167,6 +167,23 @@ if ($type === 'investment') {
         $price = $costBasis / $qty;
     }
 
+    // "Originally Acquired" date for a transfer-in (Add): keeps the lot's original
+    // holding period. Only stored for adds; must not be after the transaction date.
+    $acquiredDate = null;
+    if ($activity === 'add') {
+        $acqRaw = trim($_POST['inv_acquired_date'] ?? '');
+        if ($acqRaw !== '') {
+            $acqDt = DateTime::createFromFormat('!Y-m-d', $acqRaw);
+            if (!$acqDt || $acqDt->format('Y-m-d') !== $acqRaw) {
+                echo json_encode(['ok' => false, 'error' => 'Invalid Originally Acquired date']); exit;
+            }
+            if ($acqRaw > $date) {
+                echo json_encode(['ok' => false, 'error' => 'Originally Acquired date can\'t be after the transaction date']); exit;
+            }
+            $acquiredDate = $acqRaw;
+        }
+    }
+
     if (!in_array($activity, ['buy','sell','add','remove','split','reinvest_div','reinvest_cap','div','int'])) {
         echo json_encode(['ok' => false, 'error' => 'Invalid activity']); exit;
     }
@@ -179,24 +196,42 @@ if ($type === 'investment') {
     // that POSTed id can't be trusted as a signal here.
     $hasLinkedCash = !empty($account['linked_account_id']);
 
-    // Amount stored in the investment account.
+    // Amount stored in the investment account, using the same sign convention as
+    // imports (cash flow: buy/reinvest negative, sell positive) so import duplicate
+    // detection matches hand-entered trades.
     // add/remove only change share count — no cash, no cost basis amount.
     $invAmount = match($activity) {
-        'buy'          =>  $hasLinkedCash ? ($qty * $price + $commission) : 0.0,
-        'reinvest_div' =>  $qty * $price + $commission,
-        'reinvest_cap' =>  $qty * $price + $commission,
-        'sell'         =>  $hasLinkedCash ? -($qty * $price - $commission) : 0.0,
+        'buy'          =>  $hasLinkedCash ? -($qty * $price + $commission) : 0.0,
+        'reinvest_div' =>  -($qty * $price + $commission),
+        'reinvest_cap' =>  -($qty * $price + $commission),
+        'sell'         =>  $hasLinkedCash ? ($qty * $price - $commission) : 0.0,
         'div', 'int'   =>  $incomeAmount,
         default        => 0.0,
     };
 
-    // Resolve investment_id from payee name; prefer an active match but fall back to a
-    // deactivated one so recording new activity revives it instead of creating a duplicate.
-    $invLookup = $db->prepare('SELECT id, is_active FROM investments WHERE name = ? ORDER BY is_active DESC, id LIMIT 1');
-    $invLookup->execute([$payee]);
+    // Editing with the payee unchanged keeps the transaction's security. Re-matching
+    // the payee against investment names could pick a different (or brand-new,
+    // unpriced) security for an imported broker payee and move the shares to it.
+    $row = false;
+    if ($txnId && !empty($existingTxn) && $existingTxn['payee'] === $payee) {
+        $keepLookup = $db->prepare(
+            'SELECT i.id, i.is_active FROM investment_transactions it
+             JOIN investments i ON i.id = it.investment_id
+             WHERE it.transaction_id = ?'
+        );
+        $keepLookup->execute([$txnId]);
+        $row = $keepLookup->fetch();
+    }
+    // Otherwise resolve investment_id from payee name; prefer an active match but fall back
+    // to a deactivated one so recording new activity revives it instead of creating a duplicate.
+    if (!$row) {
+        $invLookup = $db->prepare('SELECT id, is_active FROM investments WHERE name = ? ORDER BY is_active DESC, id LIMIT 1');
+        $invLookup->execute([$payee]);
+        $row = $invLookup->fetch();
+    }
     $investmentId = null;
     $reviveInvId  = null;
-    if ($row = $invLookup->fetch()) {
+    if ($row) {
         $investmentId = (int)$row['id'];
         if (!(int)$row['is_active']) $reviveInvId = $investmentId;
     }
@@ -270,12 +305,12 @@ if ($type === 'investment') {
             $oldActivity = $existCheck->fetchColumn();
             if ($oldActivity !== false) {
                 $db->prepare(
-                    'UPDATE investment_transactions SET investment_id=?, activity=?, quantity=?, price=?, commission=? WHERE transaction_id=?'
-                )->execute([$investmentId, $activity, $qty, $price, $commission, $txnId]);
+                    'UPDATE investment_transactions SET investment_id=?, activity=?, quantity=?, price=?, commission=?, acquired_date=? WHERE transaction_id=?'
+                )->execute([$investmentId, $activity, $qty, $price, $commission, $acquiredDate, $txnId]);
             } else {
                 $db->prepare(
-                    'INSERT INTO investment_transactions (transaction_id,investment_id,activity,quantity,price,commission) VALUES (?,?,?,?,?,?)'
-                )->execute([$txnId, $investmentId, $activity, $qty, $price, $commission]);
+                    'INSERT INTO investment_transactions (transaction_id,investment_id,activity,quantity,price,commission,acquired_date) VALUES (?,?,?,?,?,?,?)'
+                )->execute([$txnId, $investmentId, $activity, $qty, $price, $commission, $acquiredDate]);
             }
 
             // Update or create paired cash transaction
@@ -345,8 +380,8 @@ if ($type === 'investment') {
             $savedId = (int)$db->lastInsertId();
 
             $db->prepare(
-                'INSERT INTO investment_transactions (transaction_id,investment_id,activity,quantity,price,commission) VALUES (?,?,?,?,?,?)'
-            )->execute([$savedId, $investmentId, $activity, $qty, $price, $commission]);
+                'INSERT INTO investment_transactions (transaction_id,investment_id,activity,quantity,price,commission,acquired_date) VALUES (?,?,?,?,?,?,?)'
+            )->execute([$savedId, $investmentId, $activity, $qty, $price, $commission, $acquiredDate]);
 
             // Paired cash transaction for buy/sell/div/int
             if ($activity === 'buy' && $cashAcctId && $hasLinkedCash) {
@@ -609,7 +644,7 @@ function skipScheduledBill(PDO $db, int $billId, int $txnId): void {
     $bill = $stmt->fetch();
     if (!$bill) return;
 
-    $nextDue = advanceDueDate($bill['next_due_date'], $bill['frequency']);
+    $nextDue = advanceDueDate($bill['next_due_date'], $bill['frequency'], $bill['due_day'] !== null ? (int)$bill['due_day'] : null);
     if ($bill['frequency'] === 'once' || $nextDue === null) {
         $db->prepare('UPDATE scheduled_bills SET is_active = 0 WHERE id = ?')->execute([$billId]);
     } else {

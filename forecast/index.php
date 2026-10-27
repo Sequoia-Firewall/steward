@@ -3,19 +3,6 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 requireLogin();
 
-// ── Helper: advance a date by frequency ──────────────────────────
-function forecastAdvanceDate(string $date, string $frequency): ?string {
-    $ts = strtotime($date);
-    return match ($frequency) {
-        'weekly'    => date('Y-m-d', strtotime('+1 week',   $ts)),
-        'biweekly'  => date('Y-m-d', strtotime('+2 weeks',  $ts)),
-        'monthly'   => date('Y-m-d', strtotime('+1 month',  $ts)),
-        'quarterly' => date('Y-m-d', strtotime('+3 months', $ts)),
-        'yearly'    => date('Y-m-d', strtotime('+1 year',   $ts)),
-        default     => null,
-    };
-}
-
 // ── Parameters ──────────────────────────────────────────────────
 $db           = getDB();
 $horizon      = in_array((int)($_GET['days'] ?? 30), [30, 60, 90]) ? (int)$_GET['days'] : 30;
@@ -69,7 +56,7 @@ if ($account) {
                 ];
             }
             if ($bill['frequency'] === 'once') break;
-            $next = forecastAdvanceDate($date, $bill['frequency']);
+            $next = advanceDueDate($date, $bill['frequency'], $bill['due_day'] !== null ? (int)$bill['due_day'] : null);
             if (!$next || $next === $date) break;
             $date = $next;
         }

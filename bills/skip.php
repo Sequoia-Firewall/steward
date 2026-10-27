@@ -29,7 +29,7 @@ if (!$bill) {
     exit;
 }
 
-$nextDue = advanceDueDate($bill['next_due_date'], $bill['frequency']);
+$nextDue = advanceDueDate($bill['next_due_date'], $bill['frequency'], $bill['due_day'] !== null ? (int)$bill['due_day'] : null);
 
 if ($bill['frequency'] === 'once' || $nextDue === null) {
     $db->prepare('UPDATE scheduled_bills SET is_active = 0 WHERE id = ?')->execute([$id]);

@@ -329,9 +329,10 @@ try {
                 $invTxnId = (int)$db->lastInsertId();
 
                 $db->prepare(
-                    'INSERT INTO investment_transactions (transaction_id, investment_id, activity, action_type, quantity, price, commission)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)'
-                )->execute([$invTxnId, $investmentId, $activity, $actionType ?: null, $qty, $price, $comm]);
+                    'INSERT INTO investment_transactions (transaction_id, investment_id, activity, action_type, quantity, price, commission, acquired_date)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$invTxnId, $investmentId, $activity, $actionType ?: null, $qty, $price, $comm,
+                            $activity === 'add' ? ($row['acquired_date'] ?? null) : null]);
             }
 
             // ── Cash routing ───────────────────────────────────────────────

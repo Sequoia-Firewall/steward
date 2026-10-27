@@ -112,7 +112,7 @@ try {
     }
 
     // Advance next_due_date based on frequency
-    $nextDue = advanceDueDate($bill['next_due_date'], $bill['frequency']);
+    $nextDue = advanceDueDate($bill['next_due_date'], $bill['frequency'], $bill['due_day'] !== null ? (int)$bill['due_day'] : null);
 
     if ($bill['frequency'] === 'once' || $nextDue === null) {
         // Deactivate one-time bills after posting

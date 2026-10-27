@@ -138,7 +138,7 @@ foreach ($scheduledBills as $bill) {
         }
 
         if ($freq === 'once') break;
-        $next = advanceDueDate($cur, $freq);
+        $next = advanceDueDate($cur, $freq, $bill['due_day'] !== null ? (int)$bill['due_day'] : null);
         if ($next === null || $next === $cur) break;
         $cur = $next;
         $occurrences++;

@@ -13,6 +13,7 @@ if (!$account) {
 }
 
 $isInvestAccount   = (isInvestLike($account['type']) && !$account['is_investment_cash']);
+$isCryptoAccount   = $account['type'] === 'Crypto';
 $isAssetAccount    = ($account['type'] === 'Asset');
 $isLoanAccount     = ($account['type'] === 'Loan');
 $isCreditCard      = ($account['type'] === 'Credit Card');
@@ -324,8 +325,8 @@ include __DIR__ . '/../includes/header.php';
             <span class="inv-activity-badge act-<?= h($activity) ?>"><?= h($actLabel) ?></span>
             <?php else: ?><span class="text-muted">—</span><?php endif; ?>
           </td>
-          <td class="col-qty text-end"><?= $invQty > 0 ? number_format($invQty, 4) : '<span class="text-muted">—</span>' ?></td>
-          <td class="col-price text-end"><?= ($invPrice > 0 && !in_array($activity, ['add','remove','split'])) ? formatMoney($invPrice) : '<span class="text-muted">—</span>' ?></td>
+          <td class="col-qty text-end"><?= $invQty > 0 ? ($isCryptoAccount ? formatQty($invQty, true) : number_format($invQty, 4)) : '<span class="text-muted">—</span>' ?></td>
+          <td class="col-price text-end"><?= ($invPrice > 0 && !in_array($activity, ['add','remove','split'])) ? formatInvPrice($invPrice, $isCryptoAccount) : '<span class="text-muted">—</span>' ?></td>
           <td class="col-inv-total text-end"><?= $invTotal > 0 ? formatMoney($invTotal) : '<span class="text-muted">—</span>' ?></td>
           <td class="col-c"><?= $clearedIcon ?></td>
           <td class="col-memo-inv text-muted small"><?= h($txn['memo'] ?? '') ?></td>
@@ -985,7 +986,7 @@ function onActivityChange() {
   const showMap   = {
     buy:          ['invFieldQty','invFieldPrice','invFieldCommission','invFieldTotal','invFieldCashFrom'],
     sell:         ['invFieldQty','invFieldPrice','invFieldCommission','invFieldTotal','invFieldCashTo'],
-    add:          ['invFieldQty','invFieldCostBasis'],
+    add:          ['invFieldQty','invFieldCostBasis','invFieldAcquired'],
     remove:       ['invFieldQty'],
     split:        ['invFieldQty'],
     reinvest_div: ['invFieldQty','invFieldPrice','invFieldCommission','invFieldTotal'],
@@ -993,14 +994,26 @@ function onActivityChange() {
     div:          ['invFieldIncomeAmount','invFieldCashFrom'],
     int:          ['invFieldIncomeAmount','invFieldCashFrom'],
   };
-  const allFields = ['invFieldQty','invFieldCostBasis','invFieldPrice','invFieldCommission','invFieldTotal','invFieldCashFrom','invFieldCashTo','invFieldIncomeAmount'];
+  const allFields = ['invFieldQty','invFieldCostBasis','invFieldAcquired','invFieldPrice','invFieldCommission','invFieldTotal','invFieldCashFrom','invFieldCashTo','invFieldIncomeAmount'];
   allFields.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   (showMap[activity] || []).forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
   const lbl = document.getElementById('invTotalLabel');
   if (lbl) lbl.textContent = activity === 'sell' ? 'Total Proceeds' : 'Total Cost';
   const cashFromLbl = document.getElementById('invCashFromLabel');
   if (cashFromLbl) cashFromLbl.textContent = (activity === 'div' || activity === 'int') ? 'Deposit To (Cash)' : 'Transfer From (Cash)';
+  const removeNote = document.getElementById('invRemoveNote');
+  if (removeNote) removeNote.style.display = activity === 'remove' ? '' : 'none';
   updateInvTotal();
+  updateAddCostWarning();
+}
+
+// Add with no cost basis: warn (doesn't block saving)
+function updateAddCostWarning() {
+  const warn = document.getElementById('invAddNoCostWarn');
+  if (!warn) return;
+  const activity = document.getElementById('inv_activity')?.value;
+  const cost     = parseFloat(document.getElementById('inv_cost_basis')?.value) || 0;
+  warn.style.display = (activity === 'add' && cost <= 0) ? '' : 'none';
 }
 
 function updateInvTotal() {
@@ -1054,6 +1067,8 @@ document.addEventListener('DOMContentLoaded', function () {
           if (inv.activity === 'add') {
             const cb = (parseFloat(inv.quantity) || 0) * (parseFloat(inv.price) || 0);
             set('inv_cost_basis', cb > 0 ? cb.toFixed(2) : '');
+            set('inv_acquired_date', inv.acquired_date);
+            updateAddCostWarning();
           }
           if (inv.activity === 'div' || inv.activity === 'int') {
             set('inv_income_amount', Math.abs(parseFloat(txn.amount) || 0).toFixed(2));
@@ -1129,6 +1144,14 @@ document.addEventListener('DOMContentLoaded', function () {
     if (needsPrice) {
       const price = parseFloat(document.getElementById('inv_price')?.value || 0);
       if (price <= 0) { showStatus('Please enter a price per share.','error'); document.getElementById('inv_price')?.focus(); return; }
+    }
+    if (activity === 'add') {
+      const acq = document.getElementById('inv_acquired_date')?.value;
+      if (acq && acq > dateVal) {
+        showStatus('Originally Acquired date can\'t be after the transaction date.', 'error');
+        document.getElementById('inv_acquired_date')?.focus();
+        return;
+      }
     }
     showStatus('<i class="bi bi-arrow-repeat spin"></i> Saving…', 'info');
     fetch(BASE_PATH + '/transactions/save', { method: 'POST', body: new FormData(document.getElementById('txnForm')) })

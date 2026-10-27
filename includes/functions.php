@@ -13,10 +13,18 @@ function isCashAccount(string $type): bool {
     return in_array($type, ['Checking', 'Savings', 'Credit Card', 'investment-cash'], true);
 }
 
-/** Format a crypto/investment quantity with up to 10 significant decimal places. */
+/** Format an investment quantity: up to 8 decimal places for crypto, 6 otherwise. */
 function formatQty(float $qty, bool $crypto = false): string {
-    $decimals = $crypto ? 10 : 6;
+    $decimals = $crypto ? 8 : 6;
     return rtrim(rtrim(number_format($qty, $decimals, '.', ','), '0'), '.');
+}
+
+/** Format a per-share price: crypto prices under $1 show up to 8 decimal places. */
+function formatInvPrice(float $price, bool $crypto = false): string {
+    if (!$crypto || abs($price) >= 1) return formatMoney($price);
+    $fmt = rtrim(number_format(abs($price), 8, '.', ''), '0');
+    if (strlen(substr(strrchr($fmt, '.'), 1)) < 2) $fmt = number_format(abs($price), 2, '.', '');
+    return ($price < 0 ? '-' : '') . MONEY_SYMBOL . $fmt;
 }
 
 /** Format a price with smart decimal places: more for sub-$1 crypto. */
@@ -2213,8 +2221,17 @@ function runMigration(int $version, string $path): array {
 
 // ── Scheduled bills ────────────────────────────────────────────
 
-function advanceDueDate(string $date, string $frequency): ?string {
+// $dueDay is the bill's day of month (scheduled_bills.due_day). Month-based frequencies
+// land on that day, clamped to the month's length, so Jan 31 → Feb 28 → Mar 31 instead
+// of drifting. Without it, the day of $date is used.
+function advanceDueDate(string $date, string $frequency, ?int $dueDay = null): ?string {
     $ts = strtotime($date);
+    $monthStep = ['monthly' => 1, 'bimonthly' => 2, 'quarterly' => 3, 'yearly' => 12][$frequency] ?? 0;
+    if ($monthStep) {
+        $day   = $dueDay ?: (int)date('j', $ts);
+        $first = mktime(0, 0, 0, (int)date('n', $ts) + $monthStep, 1, (int)date('Y', $ts));
+        return date('Y-m-', $first) . sprintf('%02d', min($day, (int)date('t', $first)));
+    }
     if ($frequency === 'twice_monthly') {
         $day     = (int)date('j', $ts);
         $year    = (int)date('Y', $ts);
@@ -2231,10 +2248,6 @@ function advanceDueDate(string $date, string $frequency): ?string {
     return match ($frequency) {
         'weekly'    => date('Y-m-d', strtotime('+1 week',   $ts)),
         'biweekly'  => date('Y-m-d', strtotime('+2 weeks',  $ts)),
-        'monthly'   => date('Y-m-d', strtotime('+1 month',  $ts)),
-        'bimonthly' => date('Y-m-d', strtotime('+2 months', $ts)),
-        'quarterly' => date('Y-m-d', strtotime('+3 months', $ts)),
-        'yearly'    => date('Y-m-d', strtotime('+1 year',   $ts)),
         default     => null,
     };
 }

@@ -442,7 +442,7 @@ pre code {
       <tr><td>Savings</td><td>Savings accounts and money market accounts.</td></tr>
       <tr><td>Credit Card</td><td>Credit card accounts. Balances show as negative (amounts owed).</td></tr>
       <tr><td>Investment</td><td>Brokerage accounts holding stocks, ETFs, mutual funds, or bonds. Optionally paired with a companion <em>Cash</em> sub-account for cash transactions.</td></tr>
-      <tr><td>Crypto</td><td>Cryptocurrency wallets and exchange accounts.</td></tr>
+      <tr><td>Crypto</td><td>Cryptocurrency wallets and exchange accounts. Quantities, and prices under $1, are entered and shown with up to 8 decimal places.</td></tr>
       <tr><td>Asset</td><td>Non-liquid assets (e.g. real estate, vehicles, valuables). Tracked for net worth purposes.</td></tr>
       <tr><td>Loan</td><td>Mortgages, auto loans, or any amortizing debt. Automatically generates a payment schedule.</td></tr>
     </table>
@@ -507,8 +507,8 @@ pre code {
       <tr><th style="width:200px">Activity</th><th>Description</th></tr>
       <tr><td>Buy</td><td>Purchase shares. Reduces the linked cash account by the total cost (qty × price + commission).</td></tr>
       <tr><td>Sell</td><td>Sell shares. Increases the linked cash account by the proceeds (qty × price − commission).</td></tr>
-      <tr><td>Add</td><td>Add shares to a position with no cash movement — used for share transfers in, grants, or manual adjustments. Optionally enter a total cost basis.</td></tr>
-      <tr><td>Remove</td><td>Remove shares from a position with no cash movement — used for share transfers out or expirations.</td></tr>
+      <tr><td>Add</td><td>Add shares to a position with no cash movement — used for share transfers in, grants, or manual adjustments. Enter the total cost basis if you know it; a warning appears when it's left blank, since the shares would otherwise count as $0 cost. For shares transferred in, set <strong>Originally Acquired</strong> to the date you first bought them so the holding period carries over (it can't be later than the transaction date). OFX imports fill both in from the broker's transfer details when provided.</td></tr>
+      <tr><td>Remove</td><td>Remove shares from a position with no cash movement — used for share transfers out or expirations. If you received money for the shares, record a <strong>Sell</strong> instead so the proceeds and gain are tracked.</td></tr>
       <tr><td>Split</td><td>Record a stock split. Enter the new share quantity after the split.</td></tr>
       <tr><td>Reinvest Dividend</td><td>Dividend or interest automatically reinvested into additional shares. Both sides (investment + shares) stay in the investment account.</td></tr>
       <tr><td>Reinvest Cap Gain</td><td>Capital gain distribution automatically reinvested into additional shares.</td></tr>
@@ -732,6 +732,11 @@ pre code {
 
     <h3>Frequencies</h3>
     <p>Supported schedules: <strong>Once, Weekly, Bi-weekly, Twice a Month (15th &amp; last), Monthly, Bimonthly (every 2 months), Quarterly, Yearly</strong>.</p>
+    <p>
+      Monthly, bimonthly, quarterly and yearly items remember their day of the month. An item due
+      on the 31st moves to the last day of shorter months and back to the 31st afterwards
+      (Jan 31 → Feb 28 → Mar 31). Changing the next due date by hand sets a new day of the month.
+    </p>
 
     <h3>Posting a Payment</h3>
     <p>
@@ -1387,6 +1392,12 @@ pre code {
       <code>-50.00</code>; a $1,200 paycheck deposit is stored as <code>1200.00</code>. This
       applies to <code>transactions.amount</code>, <code>transaction_splits.amount</code>, and
       <code>investment_transactions</code> values.
+    </p>
+    <p>
+      For trades, the investment-side <code>transactions.amount</code> follows the cash: a Buy or
+      reinvestment is negative (cash spent on shares) and a Sell is positive (proceeds received).
+      Hand-entered and imported trades use the same convention, so imports recognize trades you
+      already entered by hand. Add, Remove and Split carry no amount.
     </p>
 
     <h3>Table Overview</h3>

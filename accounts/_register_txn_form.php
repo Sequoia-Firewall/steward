@@ -6,7 +6,10 @@
       </button>
     </div>
 
-    <?php if ($isInvestAccount): ?>
+    <?php if ($isInvestAccount):
+      // Crypto quantities and sub-$1 prices need up to 8 decimals
+      $_invDecStep = $account['type'] === 'Crypto' ? '0.00000001' : '0.000001';
+    ?>
     <!-- Investment: single tab -->
     <div class="txn-tabs" id="txnTabs">
       <button class="txn-tab active" data-tab="investment">
@@ -107,7 +110,10 @@
             <div class="txn-field inv-detail-field" id="invFieldQty" style="display:none">
               <label>Quantity (Shares)</label>
               <input type="number" name="inv_qty" id="inv_qty" class="form-control"
-                     step="0.000001" min="0" placeholder="0" oninput="updateInvTotal()">
+                     step="<?= $_invDecStep ?>" min="0" placeholder="0" oninput="updateInvTotal()">
+              <div class="small text-muted mt-1" id="invRemoveNote" style="display:none">
+                Received money for these shares? Record a <strong>Sell</strong> instead, so the proceeds and gain are tracked.
+              </div>
             </div>
 
             <div class="txn-field inv-detail-field" id="invFieldIncomeAmount" style="display:none">
@@ -124,7 +130,18 @@
               <div class="input-group input-group-sm">
                 <span class="input-group-text"><?= MONEY_SYMBOL ?></span>
                 <input type="number" name="inv_cost_basis" id="inv_cost_basis" class="form-control"
-                       step="0.01" min="0" placeholder="0.00">
+                       step="0.01" min="0" placeholder="0.00" oninput="updateAddCostWarning()">
+              </div>
+              <div class="small text-warning mt-1" id="invAddNoCostWarn" style="display:none">
+                <i class="bi bi-exclamation-triangle"></i> No cost basis entered. These shares will count as $0 cost, which overstates gains when they're sold.
+              </div>
+            </div>
+
+            <div class="txn-field inv-detail-field" id="invFieldAcquired" style="display:none">
+              <label for="inv_acquired_date">Originally Acquired</label>
+              <input type="date" name="inv_acquired_date" id="inv_acquired_date" class="form-control">
+              <div class="small text-muted mt-1">
+                For shares transferred in: the date you first bought them, so the holding period carries over. Leave blank to use the transaction date.
               </div>
             </div>
 
@@ -133,7 +150,7 @@
               <div class="input-group input-group-sm">
                 <span class="input-group-text"><?= MONEY_SYMBOL ?></span>
                 <input type="number" name="inv_price" id="inv_price" class="form-control"
-                       step="0.000001" min="0" placeholder="0.000000" oninput="updateInvTotal()">
+                       step="<?= $_invDecStep ?>" min="0" placeholder="0.000000" oninput="updateInvTotal()">
               </div>
             </div>
 

@@ -51,19 +51,25 @@ if ($type === 'transfer') {
 try {
     $db = getDB();
     if ($id) {
+        // Re-anchor the day of month only when the due date is changed by hand, so a
+        // month-end bill sitting on Feb 28 keeps its 31st. due_day is assigned before
+        // next_due_date because MySQL applies SET assignments left to right.
         $stmt = $db->prepare(
             'UPDATE scheduled_bills
              SET name=?, type=?, account_id=?, to_account_id=?, category_id=?, subcategory_id=?,
-                 amount=?, is_estimated=?, frequency=?, next_due_date=?, notes=?
+                 amount=?, is_estimated=?, frequency=?,
+                 due_day=IF(next_due_date = ? AND due_day IS NOT NULL, due_day, DAY(?)),
+                 next_due_date=?, notes=?
              WHERE id=?'
         );
         $stmt->execute([$name, $type, $accountId, $toAccountId, $categoryId, $subcategoryId,
-                        $amount, $isEstimated, $frequency, $nextDueDate, $notes ?: null, $id]);
+                        $amount, $isEstimated, $frequency, $nextDueDate, $nextDueDate,
+                        $nextDueDate, $notes ?: null, $id]);
     } else {
         $stmt = $db->prepare(
             'INSERT INTO scheduled_bills
-             (name, type, account_id, to_account_id, category_id, subcategory_id, amount, is_estimated, frequency, next_due_date, notes)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+             (name, type, account_id, to_account_id, category_id, subcategory_id, amount, is_estimated, frequency, next_due_date, due_day, notes)
+             VALUES (?,?,?,?,?,?,?,?,?,?,DAY(next_due_date),?)'
         );
         $stmt->execute([$name, $type, $accountId, $toAccountId, $categoryId, $subcategoryId,
                         $amount, $isEstimated, $frequency, $nextDueDate, $notes ?: null]);

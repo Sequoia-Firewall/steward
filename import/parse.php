@@ -552,6 +552,18 @@ function parseOFXInvestment(string $body): array {
             ? ['remove', 'ShrsOut']
             : ['add',    'ShrsIn'];
         $row = parseOFXSecBlock($block, $secMap, $activity, $actionType);
+        if ($row && $activity === 'add') {
+            // Original purchase date keeps the lot's holding period; AVGCOSTBASIS is the
+            // per-share cost basis when the broker sends no UNITPRICE for the transfer.
+            // (ofxDate('') returns today, so only convert a tag that is present.)
+            $purchRaw = ofxTag($block, 'DTPURCHASE');
+            $purch    = $purchRaw !== '' ? ofxDate($purchRaw) : '';
+            if ($purch !== '' && $purch <= $row['date']) $row['acquired_date'] = $purch;
+            if ($row['price'] <= 0) {
+                $avgCost = abs((float)ofxTag($block, 'AVGCOSTBASIS'));
+                if ($avgCost > 0) $row['price'] = $avgCost;
+            }
+        }
         if ($row) $rows[] = $row;
     }
 
