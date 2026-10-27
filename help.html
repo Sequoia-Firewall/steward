@@ -334,8 +334,16 @@ pre code {
       Next to today's date in the Dashboard header, Steward shows market-data status:
       <strong>Online services not configured</strong> (provider not set up),
       <strong>No quotes updated</strong> (provider configured but no successful fetch yet), or
-      <strong>Last updated: ...</strong> after quotes are fetched. Administrators can click the
+      <strong>Prices as of ...</strong> after quotes are fetched. Administrators can click the
       setup link in the warning to open <strong>Gear → Online Services</strong>.
+    </p>
+    <p>
+      Users who can edit see a <i class="bi bi-arrow-clockwise"></i> refresh icon next to the
+      price status (and in the header of the investment widgets) whenever an online price
+      provider is set. It fetches the latest quotes and opens the same
+      <strong>Fetch Summary</strong> as the Portfolio page, which Portfolio's
+      <strong>Last Fetch Summary</strong> button can reopen later; the dashboard reloads when you
+      close it. Viewers don't see the icon, since fetching prices needs edit rights.
     </p>
 
     <h3>Available Widgets</h3>
@@ -347,7 +355,7 @@ pre code {
       <tr><td>Budget</td><td>Budget progress bars for the current month.</td></tr>
       <tr><td>Upcoming Bills</td><td>Bills and scheduled items due in the next 30 days.</td></tr>
       <tr><td>All Accounts</td><td>Every account grouped by type with balances.</td></tr>
-      <tr><td>Key Indicators</td><td>Net worth, total assets, total liabilities, and liquid cash.</td></tr>
+      <tr><td>Key Indicators</td><td>Net worth, total assets, total liabilities, and liquid cash, plus monthly cash flow. Cash flow counts income and expenses the same way as the <a href="#reports">Income vs. Expense report</a>: categorized income and expenses only (refunds reduce expenses), with transfers, opening balances and other uncategorized amounts left out, on the same accounts.</td></tr>
       <tr><td>Savings Goals</td><td>Progress toward each active savings goal.</td></tr>
       <tr><td>Loans</td><td>Outstanding loan balances and next payment dates.</td></tr>
       <tr><td>Market Indexes</td><td>Live quotes for S&amp;P 500, Dow, NASDAQ, and other indices.</td></tr>

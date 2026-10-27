@@ -288,7 +288,10 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
     <?php elseif (!$priceLastFetched): ?>
     <span class="text-muted ms-3"><i class="bi bi-clock-history"></i> No quotes updated</span>
     <?php else: ?>
-    <span class="text-muted ms-3"><i class="bi bi-clock"></i> Last updated: <?= h(date('M j, Y g:i A', strtotime($priceLastFetched))) ?></span>
+    <span class="text-muted ms-3"><i class="bi bi-clock"></i> Prices as of <?= h(date('M j, Y g:i A', strtotime($priceLastFetched))) ?></span>
+    <?php endif; ?>
+    <?php if ($onlineServicesConfigured): ?>
+    <?= priceRefreshButton('btn btn-link btn-sm text-muted p-0 ms-2 dash-header-refresh') ?>
     <?php endif; ?>
     <button id="dashReorderBtn" class="btn btn-sm btn-outline-secondary ms-auto" onclick="enterReorder()">
       <i class="bi bi-arrows-move"></i> Reorder
@@ -1475,9 +1478,7 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
           : ($hasFilter ? $pickerAccounts : []);
 
       $_portLink    = '<a href="' . BASE_PATH . '/portfolio/index" class="tile-header-link">Portfolio</a>';
-      $_refreshBtn  = $priceProvider !== 'manual'
-          ? '<button type="button" class="tile-header-link" onclick="refreshPortfolioPrices(this)" title="Refresh prices"><i class="bi bi-arrow-clockwise"></i></button>'
-          : '';
+      $_refreshBtn  = priceRefreshButton();
       $_invActions  = $_refreshBtn . $_portLink;
       $_watchlistActions = $_refreshBtn . '<a href="' . BASE_PATH . '/watchlist/index" class="tile-header-link">Watchlist</a>';
 
@@ -1885,7 +1886,11 @@ function refreshPortfolioPrices(btn) {
               + '<strong>' + n + ' price' + (n !== 1 ? 's' : '') + ' updated</strong>';
       if (skip) msg += '<br><span class="text-muted" style="font-size:.8rem">' + skip + ' symbol' + (skip !== 1 ? 's' : '') + ' skipped</span>';
       toast.update(msg, 'success', { autoDismiss: 4000 });
-      setTimeout(() => location.reload(), 1200);
+      // Same Fetch Summary as the Portfolio page (and saved for its recall button);
+      // reload once it's closed so the widgets pick up the new prices.
+      document.getElementById('fetchSummaryModal')
+        .addEventListener('hidden.bs.modal', () => location.reload(), { once: true });
+      showFetchSummary(d, 'latest');
     } else {
       toast.update(
         '<i class="bi bi-exclamation-triangle-fill" style="color:#dc3545"></i> ' +
@@ -2155,5 +2160,7 @@ function maximizeWidget(btn) {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('widgetMaxModal')).show();
 }
 </script>
+
+<?php include __DIR__ . '/includes/fetch_summary_modal.php'; ?>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>

@@ -51,15 +51,19 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
   <h2><i class="bi bi-briefcase"></i> Portfolio</h2>
   <div class="d-flex align-items-center gap-2">
     <?php if ($priceProvider !== 'manual' && !empty($investments)): ?>
+    <?php if (canEdit()): ?>
     <button class="btn btn-outline-secondary btn-sm" id="btnRefreshPrices" onclick="refreshPrices('latest')">
       <i class="bi bi-arrow-clockwise"></i> Refresh Prices
     </button>
+    <?php endif; ?>
     <button class="btn btn-outline-secondary btn-sm" id="btnLastFetchSummary" onclick="openLastFetchSummary()" style="display:none">
       <i class="bi bi-list-check"></i> Last Fetch Summary
     </button>
+    <?php if (canEdit()): ?>
     <button class="btn btn-outline-secondary btn-sm" id="btnFetchHistory" onclick="openHistoryModal()" style="display:none">
       <i class="bi bi-calendar-range"></i> Fetch History
     </button>
+    <?php endif; ?>
     <?php endif; ?>
     <?php if (canEdit()): ?>
     <button class="btn btn-primary btn-sm" onclick="openInvestmentModal()">
@@ -439,39 +443,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
 
 <?php include __DIR__ . '/../includes/investment_modal.php'; ?>
 
-<!-- Fetch Summary Modal -->
-<div class="modal fade" id="fetchSummaryModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content confirm-modal">
-      <div class="modal-header confirm-modal-header">
-        <h5 class="modal-title" id="fetchSummaryTitle">
-          <i class="bi bi-cloud-check"></i> Fetch Summary
-        </h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body p-0">
-        <div id="fetchSummaryTotals" class="px-3 py-2 border-bottom small text-muted"></div>
-        <table class="table table-sm mb-0" id="fetchSummaryTable">
-          <thead>
-            <tr>
-              <th class="sortable" data-col="symbol">Symbol <i class="bi bi-arrow-down-up sort-icon"></i></th>
-              <th class="sortable" data-col="name">Name <i class="bi bi-arrow-down-up sort-icon"></i></th>
-              <th class="sortable" data-col="source">Source <i class="bi bi-arrow-down-up sort-icon"></i></th>
-              <th class="text-end sortable fetch-summary-col-records" data-col="records">Records <i class="bi bi-arrow-down-up sort-icon"></i></th>
-              <th class="text-end sortable" data-col="lastquote">Last Quote <i class="bi bi-arrow-down-up sort-icon"></i></th>
-              <th class="text-end sortable" data-col="changepct">Change % <i class="bi bi-arrow-down-up sort-icon"></i></th>
-              <th class="sortable" data-col="status">Status <i class="bi bi-arrow-down-up sort-icon"></i></th>
-            </tr>
-          </thead>
-          <tbody id="fetchSummaryBody"></tbody>
-        </table>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary btn-sm" id="fetchSummaryClose" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
+<?php include __DIR__ . '/../includes/fetch_summary_modal.php'; ?>
 
 <!-- Fetch History Modal -->
 <div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
@@ -515,51 +487,6 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
 
 <script>
 const CSRF_TOKEN = '<?= h(csrfToken()) ?>';
-const FETCH_SUMMARY_LS_KEY = 'portfolio_lastFetchSummary_v1';
-let lastFetchSummaryPayload = null;
-let lastFetchSummaryMode = 'latest';
-
-function syncFetchSummaryButtons() {
-  const hasSummary = !!(lastFetchSummaryPayload && Array.isArray(lastFetchSummaryPayload.results));
-  const summaryBtn = document.getElementById('btnLastFetchSummary');
-  const historyBtn = document.getElementById('btnFetchHistory');
-  if (summaryBtn) summaryBtn.style.display = hasSummary ? '' : 'none';
-  if (historyBtn) historyBtn.style.display = hasSummary ? '' : 'none';
-}
-
-function loadSavedFetchSummary() {
-  try {
-    const raw = localStorage.getItem(FETCH_SUMMARY_LS_KEY);
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    if (!saved || typeof saved !== 'object' || !saved.data || !Array.isArray(saved.data.results)) return;
-    lastFetchSummaryPayload = saved.data;
-    lastFetchSummaryMode = saved.mode === 'history' ? 'history' : 'latest';
-  } catch (e) {
-    // Ignore malformed localStorage values.
-  }
-}
-
-function saveFetchSummary(data, mode) {
-  try {
-    localStorage.setItem(FETCH_SUMMARY_LS_KEY, JSON.stringify({
-      mode: mode === 'history' ? 'history' : 'latest',
-      data,
-      saved_at: Date.now(),
-    }));
-  } catch (e) {
-    // Ignore storage write failures.
-  }
-}
-
-function openLastFetchSummary() {
-  if (!lastFetchSummaryPayload) return;
-  showFetchSummary(lastFetchSummaryPayload, lastFetchSummaryMode, false);
-}
-
-loadSavedFetchSummary();
-syncFetchSummaryButtons();
-
 // ── Unowned filter ──────────────────────────────────────────────
 (function () {
   const checkbox = document.getElementById('showUnowned');
@@ -656,7 +583,7 @@ syncFetchSummaryButtons();
 
   document.addEventListener('click', e => {
     const th = e.target.closest('th.sortable');
-    if (!th) return;
+    if (!th || th.closest('#fetchSummaryTable')) return; // the summary modal sorts itself
     const col = th.dataset.col;
     const dir = (state.col === col && state.dir === 'asc') ? 'desc' : 'asc';
     applySort(col, dir);
@@ -733,119 +660,9 @@ function showPriceStatus(msg, type) {
   setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
-// ── Fetch summary modal ─────────────────────────────────────────
-function showFetchSummary(data, mode, remember = true) {
-  const results  = data.results || [];
-  const errCount = results.filter(r => r.status === 'error').length;
-  const fbCount  = results.filter(r => r.fallback).length;
-
-  lastFetchSummaryPayload = data;
-  lastFetchSummaryMode = mode === 'history' ? 'history' : 'latest';
-  if (remember) saveFetchSummary(data, lastFetchSummaryMode);
-  syncFetchSummaryButtons();
-
-  // Totals line
-  const totals = document.getElementById('fetchSummaryTotals');
-  let totHtml = `<strong>${data.updated}</strong> price record${data.updated !== 1 ? 's' : ''} stored`;
-  if (data.skipped) totHtml += `, <strong class="text-danger">${data.skipped}</strong> skipped`;
-  if (fbCount)      totHtml += `, <strong class="text-warning">${fbCount}</strong> via Yahoo fallback`;
-  totals.innerHTML = totHtml;
-
-  // Per-symbol rows
-  const tbody = document.getElementById('fetchSummaryBody');
-  tbody.innerHTML = '';
-  results.forEach(r => {
-    const tr = document.createElement('tr');
-    let srcHtml = r.source ? esc(r.source) : '<span class="text-muted">—</span>';
-    let countHtml = `<span class="text-muted">${r.count ?? 0}</span>`;
-    const quote = (r.last_quote !== null && r.last_quote !== undefined) ? Number(r.last_quote) : null;
-    const changePct = (r.change_pct !== null && r.change_pct !== undefined) ? Number(r.change_pct) : null;
-    const quoteHtml = quote === null || Number.isNaN(quote)
-      ? '<span class="text-muted">—</span>'
-      : `<span class="text-nowrap">${quote.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>`;
-    const changeHtml = changePct === null || Number.isNaN(changePct)
-      ? '<span class="text-muted">—</span>'
-      : `<span class="inv-gain ${changePct >= 0 ? 'gain-pos' : 'gain-neg'}">${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%</span>`;
-    let statusHtml = r.status === 'ok'
-      ? `<span class="text-success"><i class="bi bi-check-circle-fill"></i></span>`
-      : `<span class="text-danger" title="${esc(r.message)}"><i class="bi bi-x-circle-fill"></i> ${esc(r.message)}</span>`;
-    tr.dataset.symbol    = r.symbol || '';
-    tr.dataset.name      = r.name || '';
-    tr.dataset.source    = r.source || '';
-    tr.dataset.records   = r.count ?? 0;
-    tr.dataset.lastquote = quote === null || Number.isNaN(quote) ? '' : quote;
-    tr.dataset.changepct = changePct === null || Number.isNaN(changePct) ? '' : changePct;
-    tr.dataset.status    = r.status || '';
-    tr.innerHTML =
-      `<td><span class="inv-symbol">${esc(r.symbol)}</span></td>` +
-      `<td class="small text-muted">${esc(r.name)}</td>` +
-      `<td class="small">${srcHtml}</td>` +
-      `<td class="text-end small fetch-summary-col-records">${countHtml}</td>` +
-      `<td class="text-end small">${quoteHtml}</td>` +
-      `<td class="text-end small">${changeHtml}</td>` +
-      `<td class="small">${statusHtml}</td>`;
-    tbody.appendChild(tr);
-  });
-
-  // Show/hide Records column header based on mode
-  const recVisible = mode === 'history';
-  document.querySelectorAll('#fetchSummaryTable .fetch-summary-col-records').forEach(el => {
-    el.style.display = recVisible ? '' : 'none';
-  });
-
-  // Hide history modal first if open, then show summary
-  const histModal = bootstrap.Modal.getInstance(document.getElementById('historyModal'));
-  if (histModal) histModal.hide();
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('fetchSummaryModal')).show();
-}
-
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
-// ── Fetch summary table sorting ───────────────────────────────────
-(function () {
-  const numCols = new Set(['records', 'lastquote', 'changepct']);
-  let sortCol = null, sortDir = 'asc';
-
-  function getVal(row, col) {
-    const raw = row.dataset[col];
-    if (raw === '' || raw === undefined || raw === null) return null;
-    return numCols.has(col) ? parseFloat(raw) : raw;
-  }
-
-  const table = document.getElementById('fetchSummaryTable');
-  if (!table) return;
-  const tbody = document.getElementById('fetchSummaryBody');
-
-  table.querySelectorAll('th.sortable').forEach(th => {
-    th.style.cursor = 'pointer';
-    th.addEventListener('click', () => {
-      const col = th.dataset.col;
-      sortDir = (sortCol === col && sortDir === 'asc') ? 'desc' : 'asc';
-      sortCol = col;
-
-      table.querySelectorAll('th.sortable').forEach(t => {
-        const icon = t.querySelector('.sort-icon');
-        if (!icon) return;
-        icon.className = 'bi sort-icon ' + (t.dataset.col === col
-          ? (sortDir === 'asc' ? 'bi-sort-up-alt' : 'bi-sort-down-alt')
-          : 'bi-arrow-down-up');
-      });
-
-      const rows = [...tbody.querySelectorAll('tr')];
-      const dir  = sortDir === 'asc' ? 1 : -1;
-      rows.sort((a, b) => {
-        const av = getVal(a, col), bv = getVal(b, col);
-        if (av === bv)   return 0;
-        if (av === null) return 1;
-        if (bv === null) return -1;
-        return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
-      });
-      rows.forEach(r => tbody.appendChild(r));
-    });
-  });
-})();
 
 // ── History modal ───────────────────────────────────────────────
 function openHistoryModal() {

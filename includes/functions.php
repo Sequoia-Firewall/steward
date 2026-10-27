@@ -1983,14 +1983,23 @@ function getDashboardNetWorthToday(): array {
 function getDashboardCashFlow(int $months = 6): array {
     $db = getDB();
     $from = date('Y-m-01', strtotime('-' . ($months - 1) . ' months'));
+    // Same definitions as the Income vs. Expense report's default view, so the two
+    // agree: categorized splits only — income categories are income, expense categories
+    // are expenses (refunds net against them) — on the same accounts (active, not
+    // investment, investment-cash, asset or crypto), transfers left out. Opening
+    // balances, asset revaluations and other uncategorized amounts aren't income.
     $stmt = $db->prepare(
         "SELECT DATE_FORMAT(t.transaction_date,'%Y-%m') AS ym,
-                SUM(CASE WHEN t.amount > 0 THEN t.amount  ELSE 0 END) AS income,
-                SUM(CASE WHEN t.amount < 0 THEN -t.amount ELSE 0 END) AS expenses
-         FROM transactions t
-         JOIN accounts a ON a.id = t.account_id
-         WHERE a.type NOT IN ('Investment','Crypto','investment-cash')
-           AND t.type NOT IN ('transfer','investment')
+                ABS(SUM(CASE WHEN c.type = 'income'  THEN ts.amount ELSE 0 END)) AS income,
+                ABS(SUM(CASE WHEN c.type = 'expense' THEN ts.amount ELSE 0 END)) AS expenses
+         FROM transaction_splits ts
+         JOIN transactions t ON t.id = ts.transaction_id
+         JOIN categories   c ON c.id = ts.category_id
+         JOIN accounts     a ON a.id = t.account_id
+         WHERE a.is_active = 1 AND a.is_investment_cash = 0
+           AND a.type NOT IN ('Investment','Asset','Crypto')
+           AND c.type IN ('income','expense')
+           AND t.type != 'transfer'
            AND t.transaction_date >= ?
          GROUP BY ym ORDER BY ym"
     );
@@ -2179,6 +2188,16 @@ function getDashboardWatchlist(): array {
             'day_chg_pct' => $dayChgPct,
         ];
     }, $rows);
+}
+
+// Refresh-prices icon button for the dashboard header and the investment widget
+// headers — one place for the markup and the rules: shown only to users who can
+// edit (portfolio/fetch_prices requires the user or administrator role; a viewer
+// would just get an error) and only when an online price provider is set.
+function priceRefreshButton(string $class = 'tile-header-link'): string {
+    if (!canEdit() || getSetting('price_provider', 'manual') === 'manual') return '';
+    return '<button type="button" class="' . h($class) . '" onclick="refreshPortfolioPrices(this)"'
+         . ' title="Refresh prices"><i class="bi bi-arrow-clockwise"></i></button>';
 }
 
 // Realized Gains widget: FIFO realized gains in taxable accounts only — Investment
