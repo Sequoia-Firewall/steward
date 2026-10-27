@@ -20,7 +20,7 @@ const WIDGET_DEFAULT_ORDER = [
     'key_indicators', 'goals', 'loans',
     'market_indexes', 'top_movers', 'portfolio_movers', 'most_active',
     'crypto', 'watchlist',
-    'portfolio_snapshot', 'asset_allocation',
+    'portfolio_snapshot', 'asset_allocation', 'realized_gains',
     'bookmarks', 'notepad',
 ];
 
@@ -101,6 +101,7 @@ $dashCashFlow      = isset($_visSet['key_indicators']) ? getDashboardCashFlow(6)
 $dashGoals    = isset($_visSet['goals'])     ? getDashboardGoals()      : null;
 $dashLoans    = isset($_visSet['loans'])     ? getDashboardLoans()      : null;
 $dashWatchlist = isset($_visSet['watchlist']) ? getDashboardWatchlist() : null;
+$dashRealized  = isset($_visSet['realized_gains']) ? getDashboardRealizedGains() : null;
 
 $spendWidgetData = isset($_visSet['monthly_spending']) ? [
     'month'      => $monthlySpend,
@@ -186,6 +187,7 @@ $widgetLabels = [
     'watchlist'           => 'Watchlist',
     'portfolio_snapshot'  => 'Portfolio Snapshot',
     'asset_allocation'    => 'Asset Allocation',
+    'realized_gains'      => 'Realized Gains',
     'bookmarks'           => 'Bookmarks',
     'notepad'             => 'Notepad',
 ];
@@ -209,6 +211,7 @@ $widgetIcons = [
     'watchlist'           => 'bi-binoculars-fill',
     'portfolio_snapshot'  => 'bi-bar-chart-fill',
     'asset_allocation'    => 'bi-pie-chart-fill',
+    'realized_gains'      => 'bi-cash-coin',
     'bookmarks'           => 'bi-bookmarks-fill',
     'notepad'             => 'bi-journal-text',
 ];
@@ -1232,6 +1235,46 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
           <?php break;
 
           // ── Asset Allocation ───────────────────────────────────
+          // ── Realized Gains (taxable accounts) ──────────────────
+          case 'realized_gains':
+            $_rg     = $dashRealized ?? getDashboardRealizedGains();
+            $_rgY    = (int)date('Y');
+            $_rgCur  = $_rg['years'][$_rgY];
+            $_rgPrev = $_rg['years'][$_rgY - 1];
+            $_rgFmt  = fn(float $v) => '<span class="' . ($v >= 0 ? 'gain-pos' : 'gain-neg') . '">'
+                                     . ($v >= 0 ? '+' : '-') . formatMoney(abs($v)) . '</span>';
+          ?>
+    <div class="d-flex justify-content-between align-items-baseline mb-1">
+      <span class="text-muted small"><?= $_rgY ?> to date · taxable accounts</span>
+      <span class="fw-semibold"><?= $_rgFmt($_rgCur['total']) ?></span>
+    </div>
+    <div class="d-flex gap-3 small mb-2">
+      <span>Short-term <?= $_rgFmt($_rgCur['short']) ?></span>
+      <span>Long-term <?= $_rgFmt($_rgCur['long']) ?></span>
+    </div>
+    <div class="text-muted small mb-2">
+      <?= $_rgY - 1 ?>: <?= $_rgFmt($_rgPrev['total']) ?>
+      (<?= $_rgPrev['count'] ?> sale<?= $_rgPrev['count'] !== 1 ? 's' : '' ?>)
+    </div>
+    <?php if (empty($_rg['recent'])): ?>
+    <p class="text-muted small mb-0">No sales in taxable accounts yet.</p>
+    <?php else: ?>
+    <table class="table table-sm dash-table mb-0">
+      <thead><tr><th>Sold</th><th>Security</th><th>Term</th><th class="text-end">Gain / Loss</th></tr></thead>
+      <tbody>
+        <?php foreach ($_rg['recent'] as $_s): ?>
+        <tr>
+          <td class="text-nowrap"><?= formatDate($_s['date']) ?></td>
+          <td><span class="inv-symbol"><?= h($_s['symbol'] ?: $_s['name']) ?></span></td>
+          <td class="text-muted small"><?= $_s['term'] ?></td>
+          <td class="text-end"><?= $_rgFmt($_s['gain']) ?></td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php endif; ?>
+          <?php break;
+
           case 'asset_allocation': ?>
 <div class="d-flex gap-2 mb-2">
   <button class="btn btn-xs btn-sm aa-view-btn <?= $_aaView === 'type' ? 'btn-primary' : 'btn-outline-secondary' ?>" onclick="setAAView('type',this)">By Type</button>
@@ -1449,6 +1492,7 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
           'loans'              => '<a href="' . BASE_PATH . '/loans/index" class="tile-header-link">Manage</a>',
           'portfolio_snapshot' => '<a href="' . BASE_PATH . '/reports/portfolio_snapshot" class="tile-header-link">Full Report</a>',
           'asset_allocation'   => '<a href="' . BASE_PATH . '/reports/asset_allocation" class="tile-header-link">Full Report</a>',
+          'realized_gains'     => '<a href="' . BASE_PATH . '/reports/capital_gains?year=' . date('Y') . '" class="tile-header-link">Capital Gains</a>',
           'market_indexes',
           'top_movers',
           'portfolio_movers',

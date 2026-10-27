@@ -2181,6 +2181,52 @@ function getDashboardWatchlist(): array {
     }, $rows);
 }
 
+// Realized Gains widget: FIFO realized gains in taxable accounts only — Investment
+// accounts that aren't retirement accounts, the same scope Capital Gains shows by
+// default. Returns this year's and last year's totals by holding term, and the most
+// recent sales:
+//   ['years'  => [year => ['short', 'long', 'total', 'proceeds', 'count']],
+//    'recent' => [['date', 'name', 'symbol', 'qty', 'gain', 'term' => 'Short'|'Long'|'Mixed']]]
+function getDashboardRealizedGains(int $recentCount = 5): array {
+    $taxable = array_map('intval', getDB()->query(
+        "SELECT id FROM accounts
+         WHERE type = 'Investment' AND is_investment_cash = 0 AND is_retirement = 0"
+    )->fetchAll(PDO::FETCH_COLUMN));
+    $taxable = array_flip($taxable);
+
+    $thisYear = (int)date('Y');
+    $empty    = ['short' => 0.0, 'long' => 0.0, 'total' => 0.0, 'proceeds' => 0.0, 'count' => 0];
+    $years    = [$thisYear => $empty, $thisYear - 1 => $empty];
+    $sales    = array_values(array_filter(getRealizedSales(), fn($s) => isset($taxable[$s['account_id']])));
+
+    foreach ($sales as $s) {
+        $y = (int)substr($s['date'], 0, 4);
+        if (!isset($years[$y])) continue;
+        $years[$y]['short']    += $s['gain_short'];
+        $years[$y]['long']     += $s['gain_long'];
+        $years[$y]['total']    += $s['gain'];
+        $years[$y]['proceeds'] += $s['proceeds'];
+        $years[$y]['count']++;
+    }
+
+    $recent = [];
+    if ($sales) {
+        $inv = [];
+        foreach (getDB()->query('SELECT id, name, symbol FROM investments')->fetchAll() as $i) $inv[(int)$i['id']] = $i;
+        foreach (array_slice(array_reverse($sales), 0, $recentCount) as $s) {
+            $recent[] = [
+                'date'   => $s['date'],
+                'name'   => $inv[$s['investment_id']]['name']   ?? '',
+                'symbol' => $inv[$s['investment_id']]['symbol'] ?? '',
+                'qty'    => $s['qty'],
+                'gain'   => $s['gain'],
+                'term'   => $s['qty_long'] > 0.0000001 ? ($s['qty_short'] > 0.0000001 ? 'Mixed' : 'Long') : 'Short',
+            ];
+        }
+    }
+    return ['years' => $years, 'recent' => $recent];
+}
+
 // ── Dashboard Bookmarks ────────────────────────────────────────
 function ensureBookmarksTable(): void {
     getDB()->exec("
