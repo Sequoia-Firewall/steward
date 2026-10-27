@@ -70,4 +70,25 @@ if ($action === 'flip_type') {
     exit;
 }
 
+// ── Count / don't count as a portfolio withdrawal ───────────────
+// Set on the spending-side leg of a transfer to or from the portfolio. Only the flag
+// changes (no amount), so it's allowed on reconciled transfers too.
+if ($action === 'set_withdrawal_exclusion') {
+    $qualifies = array_filter(
+        getPortfolioFlows($txn['transaction_date'], $txn['transaction_date'],
+            ['accounts' => [(int)$txn['account_id']], 'include_excluded' => true]),
+        fn($f) => $f['id'] === $id
+    );
+    if (!$qualifies) {
+        echo json_encode(['ok' => false, 'error' => 'Not a transfer to or from an investment account']);
+        exit;
+    }
+    $exclude = ($_POST['exclude'] ?? '') === '1' ? 1 : 0;
+    $db->prepare('UPDATE transactions SET exclude_from_withdrawals=? WHERE id=?')->execute([$exclude, $id]);
+    logActivity('txn_edited', sprintf('%s txn #%d %s portfolio withdrawals',
+        $exclude ? 'Excluded' : 'Included', $id, $exclude ? 'from' : 'in'));
+    echo json_encode(['ok' => true, 'excluded' => (bool)$exclude]);
+    exit;
+}
+
 echo json_encode(['ok' => false, 'error' => 'Unknown action']);

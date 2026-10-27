@@ -64,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'comment'        => trim($_POST['comment'] ?? ''),
         'is_favorite'            => isset($_POST['is_favorite']) ? '1' : '0',
         'is_retirement'          => isset($_POST['is_retirement']) ? '1' : '0',
+        'is_education'           => isset($_POST['is_education']) ? '1' : '0',
         'exclude_from_net_worth' => isset($_POST['exclude_from_net_worth']) ? '1' : '0',
         'hide_from_sidebar'      => isset($_POST['hide_from_sidebar']) ? '1' : '0',
         'is_closed'      => $account['is_closed'], // default: keep current state
@@ -116,12 +117,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db = getDB();
         $db->prepare(
             'UPDATE accounts SET name=?, type=?, institution=?, account_number=?, routing_number=?,
-             comment=?, is_favorite=?, is_retirement=?, min_balance=?, currency=?, opening_balance=?,
+             comment=?, is_favorite=?, is_retirement=?, is_education=?, min_balance=?, currency=?, opening_balance=?,
              exclude_from_net_worth=?, hide_from_sidebar=?, is_closed=? WHERE id=?'
         )->execute([
             $form['name'], $form['type'], $form['institution'],
             $form['account_number'], $form['routing_number'], $form['comment'],
-            $form['is_favorite'], $form['is_retirement'], (float)$form['min_balance'], $form['currency'],
+            $form['is_favorite'], $form['is_retirement'], $form['is_education'], (float)$form['min_balance'], $form['currency'],
             (float)$form['opening_balance'], $form['exclude_from_net_worth'], $form['hide_from_sidebar'],
             $form['is_closed'], $id,
         ]);
@@ -355,6 +356,16 @@ include __DIR__ . '/../includes/header.php';
           <i class="bi bi-piggy-bank-fill text-success"></i> Retirement Account
         </label>
       </div>
+      <?php if ($account['type'] !== 'Crypto'): ?>
+      <div class="form-check mb-2"
+           title="A 529 or other education savings account. Transfers out of it aren't counted as portfolio withdrawals (income).">
+        <input class="form-check-input" type="checkbox" name="is_education" id="isEducation"
+               <?= !empty($form['is_education']) ? 'checked' : '' ?>>
+        <label class="form-check-label" for="isEducation">
+          <i class="bi bi-mortarboard-fill text-primary"></i> Education Account (529)
+        </label>
+      </div>
+      <?php endif; ?>
       <?php endif; ?>
       <?php if ($account['type'] === 'Asset'): ?>
       <div class="form-check mb-2">

@@ -200,6 +200,33 @@ if (!empty($queryAcctIds)) {
     }
 }
 
+// ── Portfolio withdrawals ─────────────────────────────────────
+// Transfers from investment accounts into the selected spending accounts count as
+// income (contributions aren't income, so they're not shown here). Dividends and
+// interest paid straight to a spending account are already counted above as
+// investment income, so they're skipped here. See getPortfolioFlows().
+$pwKey = 'portfolio_withdrawals';
+foreach (getPortfolioFlows($startDate, $endDate, ['accounts' => $selectedAcctIds, 'skip_income' => true]) as $f) {
+    if ($f['amount'] <= 0) continue;
+    $ym  = substr($f['date'], 0, 7);
+    $amt = $f['amount'];
+    if (!isset($catData[$pwKey])) {
+        $catData[$pwKey] = ['name' => 'Portfolio Withdrawals', 'total' => 0.0, 'months' => [], 'subs' => []];
+    }
+    $catData[$pwKey]['total'] += $amt;
+    $catData[$pwKey]['months'][$ym] = ($catData[$pwKey]['months'][$ym] ?? 0.0) + $amt;
+    $sub = $f['portfolio_account_name'] . ($f['is_retirement'] ? ' (retirement)' : '');
+    $catData[$pwKey]['subs'][$sub] = ($catData[$pwKey]['subs'][$sub] ?? 0.0) + $amt;
+
+    $payee = $f['payee'] ?? '';
+    if ($payee !== '') {
+        if (!isset($payeeData[$payee])) $payeeData[$payee] = ['total' => 0.0, 'count' => 0, 'kind' => 'regular'];
+        $payeeData[$payee]['total'] += $amt;
+        $payeeData[$payee]['count']++;
+    }
+    $grandTotal += $amt;
+}
+
 uasort($catData, fn($a, $b) => $b['total'] <=> $a['total']);
 arsort($payeeData);
 

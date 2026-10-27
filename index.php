@@ -20,7 +20,7 @@ const WIDGET_DEFAULT_ORDER = [
     'key_indicators', 'goals', 'loans',
     'market_indexes', 'top_movers', 'portfolio_movers', 'most_active',
     'crypto', 'watchlist',
-    'portfolio_snapshot', 'asset_allocation', 'realized_gains',
+    'portfolio_snapshot', 'asset_allocation', 'realized_gains', 'portfolio_withdrawals',
     'bookmarks', 'notepad',
 ];
 
@@ -77,7 +77,7 @@ $hiddenWidgets = $savedHidden !== null && $savedHidden !== ''
 // Hide certain widgets by default only for users who have never configured their dashboard
 // ($savedHidden === null means no saved layout at all; '' means explicitly reset/cleared)
 if ($savedHidden === null) {
-    foreach (['portfolio_snapshot', 'asset_allocation', 'notepad', 'watchlist'] as $_newW) {
+    foreach (['portfolio_snapshot', 'asset_allocation', 'notepad', 'watchlist', 'portfolio_withdrawals'] as $_newW) {
         if (!in_array($_newW, $hiddenWidgets, true)) {
             $userSavedOrder = $savedOrder ?? '';
             if (!in_array($_newW, array_map('trim', explode(',', $userSavedOrder)), true)) {
@@ -102,6 +102,7 @@ $dashGoals    = isset($_visSet['goals'])     ? getDashboardGoals()      : null;
 $dashLoans    = isset($_visSet['loans'])     ? getDashboardLoans()      : null;
 $dashWatchlist = isset($_visSet['watchlist']) ? getDashboardWatchlist() : null;
 $dashRealized  = isset($_visSet['realized_gains']) ? getDashboardRealizedGains() : null;
+$dashWithdrawals = isset($_visSet['portfolio_withdrawals']) ? getDashboardPortfolioWithdrawals() : null;
 
 $spendWidgetData = isset($_visSet['monthly_spending']) ? [
     'month'      => $monthlySpend,
@@ -188,6 +189,7 @@ $widgetLabels = [
     'portfolio_snapshot'  => 'Portfolio Snapshot',
     'asset_allocation'    => 'Asset Allocation',
     'realized_gains'      => 'Realized Gains',
+    'portfolio_withdrawals' => 'Portfolio Withdrawals',
     'bookmarks'           => 'Bookmarks',
     'notepad'             => 'Notepad',
 ];
@@ -212,6 +214,7 @@ $widgetIcons = [
     'portfolio_snapshot'  => 'bi-bar-chart-fill',
     'asset_allocation'    => 'bi-pie-chart-fill',
     'realized_gains'      => 'bi-cash-coin',
+    'portfolio_withdrawals' => 'bi-box-arrow-right',
     'bookmarks'           => 'bi-bookmarks-fill',
     'notepad'             => 'bi-journal-text',
 ];
@@ -703,7 +706,8 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
             $cf = $dashCashFlow ?? getDashboardCashFlow(6);
             $avgInc = !empty($cf['income'])   ? array_sum($cf['income'])   / count($cf['income'])   : null;
             $avgExp = !empty($cf['expenses']) ? array_sum($cf['expenses']) / count($cf['expenses']) : null;
-            $avgNet = ($avgInc !== null && $avgExp !== null) ? $avgInc - $avgExp : null; ?>
+            $avgToInv = !empty($cf['to_investments']) ? array_sum($cf['to_investments']) / count($cf['to_investments']) : 0.0;
+            $avgNet = ($avgInc !== null && $avgExp !== null) ? $avgInc - $avgExp - $avgToInv : null; ?>
     <div class="ki-section">
       <div class="ki-section-title"><i class="bi bi-graph-up-arrow"></i> Net Worth</div>
       <?php if (empty($nw['labels'])): ?>
@@ -748,6 +752,12 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
         <span class="ki-label">Avg Expenses/mo</span>
         <span class="ki-value amount-debit"><?= formatMoney($avgExp) ?></span>
       </div>
+      <?php if ($avgToInv > 0.005): ?>
+      <div class="ki-row">
+        <span class="ki-label" title="Money moved from spending accounts into investment accounts">Avg To Investments/mo</span>
+        <span class="ki-value"><?= formatMoney($avgToInv) ?></span>
+      </div>
+      <?php endif; ?>
       <div class="ki-row ki-row-total">
         <span class="ki-label">Avg Net/mo</span>
         <span class="ki-value <?= $avgNet >= 0 ? 'amount-credit' : 'amount-debit' ?>">
@@ -1278,6 +1288,29 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
     <?php endif; ?>
           <?php break;
 
+          // ── Portfolio Withdrawals ──────────────────────────────
+          case 'portfolio_withdrawals':
+            $_pw   = $dashWithdrawals ?? getDashboardPortfolioWithdrawals();
+            $_pwY  = (int)date('Y');
+            $_pwC  = $_pw['years'][$_pwY];
+            $_pwP  = $_pw['years'][$_pwY - 1];
+          ?>
+    <div class="d-flex justify-content-between align-items-baseline mb-1">
+      <span class="text-muted small"><?= $_pwY ?> to date</span>
+      <span class="fw-semibold"><?= formatMoney($_pwC['total']) ?></span>
+    </div>
+    <div class="ki-row"><span class="ki-label">Avg per month</span><span class="ki-value"><?= formatMoney($_pw['avg']) ?></span></div>
+    <div class="ki-row"><span class="ki-label">Non-retirement</span><span class="ki-value"><?= formatMoney($_pwC['nonret']) ?></span></div>
+    <div class="ki-row"><span class="ki-label">Retirement</span><span class="ki-value"><?= formatMoney($_pwC['ret']) ?></span></div>
+    <div class="text-muted small mt-2">
+      <?= $_pwY - 1 ?>: <?= formatMoney($_pwP['total']) ?>
+      (<?= $_pwP['count'] ?> transfer<?= $_pwP['count'] !== 1 ? 's' : '' ?>)
+    </div>
+    <?php if ($_pwC['count'] === 0 && $_pwP['count'] === 0): ?>
+    <p class="text-muted small mb-0 mt-1">No transfers from investment accounts into spending accounts yet.</p>
+    <?php endif; ?>
+          <?php break;
+
           case 'asset_allocation': ?>
 <div class="d-flex gap-2 mb-2">
   <button class="btn btn-xs btn-sm aa-view-btn <?= $_aaView === 'type' ? 'btn-primary' : 'btn-outline-secondary' ?>" onclick="setAAView('type',this)">By Type</button>
@@ -1494,6 +1527,7 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
           'portfolio_snapshot' => '<a href="' . BASE_PATH . '/reports/portfolio_snapshot" class="tile-header-link">Full Report</a>',
           'asset_allocation'   => '<a href="' . BASE_PATH . '/reports/asset_allocation" class="tile-header-link">Full Report</a>',
           'realized_gains'     => '<a href="' . BASE_PATH . '/reports/capital_gains?year=' . date('Y') . '" class="tile-header-link">Capital Gains</a>',
+          'portfolio_withdrawals' => '<a href="' . BASE_PATH . '/reports/portfolio_withdrawals?dr=ytd" class="tile-header-link">Full Report</a>',
           'market_indexes',
           'top_movers',
           'portfolio_movers',

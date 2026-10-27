@@ -49,17 +49,26 @@ $expStmt->execute(array_merge([$year], $acctParams));
 $expMap = [];
 foreach ($expStmt->fetchAll() as $r) $expMap[(int)$r['mo']] = (float)$r['total'];
 
+// ── Portfolio withdrawals / contributions ──────────────────────
+// Same rule as Income vs. Expense: transfers from investment accounts into spending
+// accounts count as income; money moved into investments is its own column.
+$pwByMonth = sumPortfolioFlowsByMonth(getPortfolioFlows("$year-01-01", "$year-12-31",
+    ['accounts' => $selectedAcctIds]));
+
 // ── Build rows ─────────────────────────────────────────────────
 $rows      = [];
-$totInc    = 0; $totExp = 0;
+$totInc    = 0; $totExp = 0; $totToInv = 0; $totPw = 0;
 for ($m = 1; $m <= 12; $m++) {
-    $inc = $incMap[$m] ?? 0;
+    $ym    = sprintf('%04d-%02d', $year, $m);
+    $pw    = $pwByMonth[$ym]['withdrawals']   ?? 0;
+    $toInv = $pwByMonth[$ym]['contributions'] ?? 0;
+    $inc = ($incMap[$m] ?? 0) + $pw;
     $exp = $expMap[$m] ?? 0;
-    $net = $inc - $exp;
-    $totInc += $inc; $totExp += $exp;
-    $rows[] = ['label' => date('F', mktime(0,0,0,$m,1)), 'inc' => $inc, 'exp' => $exp, 'net' => $net];
+    $net = $inc - $exp - $toInv;
+    $totInc += $inc; $totExp += $exp; $totToInv += $toInv; $totPw += $pw;
+    $rows[] = ['label' => date('F', mktime(0,0,0,$m,1)), 'inc' => $inc, 'exp' => $exp, 'toinv' => $toInv, 'net' => $net];
 }
-$totNet = $totInc - $totExp;
+$totNet = $totInc - $totExp - $totToInv;
 $avgInc = $totInc / 12;
 $avgExp = $totExp / 12;
 $avgNet = $totNet / 12;
@@ -79,16 +88,17 @@ if (($_GET['export'] ?? '') === 'csv') {
             $r['label'],
             $r['inc'] > 0 ? number_format($r['inc'], 2, '.', '') : '',
             $r['exp'] > 0 ? number_format($r['exp'], 2, '.', '') : '',
+            $r['toinv'] > 0 ? number_format($r['toinv'], 2, '.', '') : '',
             number_format($r['net'], 2, '.', ''),
             $rate !== null ? $rate . '%' : '',
         ];
     }
     $csvRows[] = ['Total',
         number_format($totInc, 2, '.', ''), number_format($totExp, 2, '.', ''),
-        number_format($totNet, 2, '.', ''),
+        number_format($totToInv, 2, '.', ''), number_format($totNet, 2, '.', ''),
         $totInc > 0 ? round($totNet / $totInc * 100, 1) . '%' : ''];
     outputCsv('cash_flow_' . $year . '.csv',
-              ['Month', 'Income', 'Expenses', 'Net Flow', 'Savings Rate'], $csvRows);
+              ['Month', 'Income', 'Expenses', 'To Investments', 'Net Flow', 'Savings Rate'], $csvRows);
 }
 
 $pageTitle   = 'Cash Flow';
@@ -128,13 +138,19 @@ include __DIR__ . '/../includes/header.php';
   <div class="report-tile tile-income">
     <div class="tile-label">Total Income</div>
     <div class="tile-value"><?= formatMoney($totInc) ?></div>
-    <div class="tile-sub">avg <?= formatMoney($avgInc) ?>/mo</div>
+    <div class="tile-sub">avg <?= formatMoney($avgInc) ?>/mo<?= $totPw > 0 ? ' · includes ' . formatMoney($totPw) . ' portfolio withdrawals' : '' ?></div>
   </div>
   <div class="report-tile tile-expense">
     <div class="tile-label">Total Expenses</div>
     <div class="tile-value"><?= formatMoney($totExp) ?></div>
     <div class="tile-sub">avg <?= formatMoney($avgExp) ?>/mo</div>
   </div>
+  <?php if ($totToInv > 0): ?>
+  <div class="report-tile tile-neutral">
+    <div class="tile-label">To Investments</div>
+    <div class="tile-value"><?= formatMoney($totToInv) ?></div>
+  </div>
+  <?php endif; ?>
   <div class="report-tile <?= $totNet >= 0 ? 'tile-positive' : 'tile-negative' ?>">
     <div class="tile-label">Net Cash Flow</div>
     <div class="tile-value"><?= formatMoney($totNet, true) ?></div>
@@ -152,6 +168,7 @@ include __DIR__ . '/../includes/header.php';
       <th>Month</th>
       <th class="text-end">Income</th>
       <th class="text-end">Expenses</th>
+      <th class="text-end" title="Money moved from spending accounts into investment accounts">To Investments</th>
       <th class="text-end">Net Flow</th>
       <th class="text-end">Savings Rate</th>
     </tr>
@@ -164,8 +181,9 @@ include __DIR__ . '/../includes/header.php';
       <td><?= h($r['label']) ?></td>
       <td class="text-end <?= $r['inc'] > 0 ? 'amount-credit' : '' ?>"><?= $r['inc'] > 0 ? formatMoney($r['inc']) : '—' ?></td>
       <td class="text-end <?= $r['exp'] > 0 ? 'amount-debit' : '' ?>"><?= $r['exp'] > 0 ? formatMoney($r['exp']) : '—' ?></td>
+      <td class="text-end"><?= $r['toinv'] > 0 ? formatMoney($r['toinv']) : '—' ?></td>
       <td class="text-end <?= $r['net'] >= 0 ? 'amount-credit' : 'amount-debit' ?>">
-        <?= ($r['inc'] > 0 || $r['exp'] > 0) ? formatMoney($r['net'], true) : '—' ?>
+        <?= ($r['inc'] > 0 || $r['exp'] > 0 || $r['toinv'] > 0) ? formatMoney($r['net'], true) : '—' ?>
       </td>
       <td class="text-end <?= $rate !== null ? ($rate >= 0 ? 'amount-credit' : 'amount-debit') : '' ?>">
         <?= $rate !== null ? round($rate, 1) . '%' : '—' ?>
@@ -178,6 +196,7 @@ include __DIR__ . '/../includes/header.php';
       <td>Total</td>
       <td class="text-end amount-credit"><?= formatMoney($totInc) ?></td>
       <td class="text-end amount-debit"><?= formatMoney($totExp) ?></td>
+      <td class="text-end"><?= formatMoney($totToInv) ?></td>
       <td class="text-end <?= $totNet >= 0 ? 'amount-credit' : 'amount-debit' ?>"><?= formatMoney($totNet, true) ?></td>
       <td class="text-end <?= $totInc > 0 ? ($totNet >= 0 ? 'amount-credit' : 'amount-debit') : '' ?>">
         <?= $totInc > 0 ? round($totNet / $totInc * 100, 1) . '%' : '—' ?>

@@ -110,6 +110,14 @@ include __DIR__ . '/../includes/header.php';
     </div>
   </a>
 
+  <a href="<?= BASE_PATH ?>/reports/portfolio_withdrawals" class="report-card">
+    <div class="report-icon"><i class="bi bi-box-arrow-right"></i></div>
+    <div class="report-info">
+      <div class="report-title">Portfolio Withdrawals</div>
+      <div class="report-desc">Money moved from investment accounts into spending accounts, by month — retirement and non-retirement — with a by-account breakdown.</div>
+    </div>
+  </a>
+
   <a href="<?= BASE_PATH ?>/reports/security_history" class="report-card">
     <div class="report-icon"><i class="bi bi-clock-history"></i></div>
     <div class="report-info">

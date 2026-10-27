@@ -1005,6 +1005,89 @@ function _investmentCostBasisPools(?string $asOf = null, ?array &$saleBasisOut =
     return $pools;
 }
 
+// ── Portfolio withdrawals ─────────────────────────────────────
+
+// Money moved between the portfolio and spending accounts, for households living off
+// their investments. One row per spending-side leg of a transfer pair whose other leg
+// is in an investment account (Investment or Crypto) or its cash sleeve: plain
+// transfers, and the cash side of a buy/sell/dividend paid from or to a bank account.
+// A positive amount is a withdrawal (money into spending, counted as income); a
+// negative one is a contribution ("To Investments"). Selling inside an account isn't a
+// withdrawal — only money that reaches a spending account is. Education accounts
+// (accounts.is_education, e.g. 529 plans, or the cash sleeve of one) are left out.
+// Spending accounts are Checking, Savings, Banking and Credit Card.
+// $opts:
+//   'accounts'         => int[]  only legs in these spending accounts (null = all)
+//   'include_excluded' => bool   also return legs marked exclude_from_withdrawals
+//                                 (each row carries 'excluded')
+//   'skip_income'      => bool   leave out dividends/interest paid straight to a
+//                                 spending account (use when investment income is
+//                                 already being counted, so it isn't counted twice)
+// Rows: id, date, amount, payee, memo, account_id, account_name, portfolio_account_id,
+//       portfolio_account_name, is_retirement, activity (of the investment leg, if any),
+//       excluded.
+function getPortfolioFlows(string $from, string $to, array $opts = []): array {
+    $where  = [];
+    $params = [$from, $to];
+    if (isset($opts['accounts'])) {
+        $ids = array_values(array_map('intval', $opts['accounts']));
+        if (!$ids) return [];
+        $where[] = 't.account_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        array_push($params, ...$ids);
+    }
+    if (empty($opts['include_excluded'])) $where[] = 't.exclude_from_withdrawals = 0';
+    if (!empty($opts['skip_income']))     $where[] = "(it.activity IS NULL OR it.activity NOT IN ('div','int'))";
+    $extra = $where ? ' AND ' . implode(' AND ', $where) : '';
+
+    $stmt = getDB()->prepare(
+        "SELECT t.id, t.transaction_date, t.amount, t.payee, t.memo, t.exclude_from_withdrawals,
+                s.id AS account_id, s.name AS account_name,
+                COALESCE(par.id, pa.id)                       AS portfolio_account_id,
+                COALESCE(par.name, pa.name)                   AS portfolio_account_name,
+                COALESCE(par.is_retirement, pa.is_retirement) AS is_retirement,
+                it.activity
+         FROM transactions t
+         JOIN accounts s      ON s.id = t.account_id
+         JOIN transactions p  ON p.id = t.transfer_pair_id
+         JOIN accounts pa     ON pa.id = p.account_id
+         LEFT JOIN accounts par ON pa.is_investment_cash = 1 AND par.id = pa.linked_account_id
+         LEFT JOIN investment_transactions it ON it.transaction_id = p.id
+         WHERE s.type IN ('Checking','Savings','Banking','Credit Card') AND s.is_investment_cash = 0
+           AND ((pa.type IN ('Investment','Crypto') AND pa.is_investment_cash = 0) OR pa.is_investment_cash = 1)
+           AND pa.is_education = 0 AND COALESCE(par.is_education, 0) = 0
+           AND t.transaction_date BETWEEN ? AND ?$extra
+         ORDER BY t.transaction_date, t.id"
+    );
+    $stmt->execute($params);
+    return array_map(fn($r) => [
+        'id'                     => (int)$r['id'],
+        'date'                   => $r['transaction_date'],
+        'amount'                 => (float)$r['amount'],
+        'payee'                  => $r['payee'],
+        'memo'                   => $r['memo'],
+        'account_id'             => (int)$r['account_id'],
+        'account_name'           => $r['account_name'],
+        'portfolio_account_id'   => (int)$r['portfolio_account_id'],
+        'portfolio_account_name' => $r['portfolio_account_name'],
+        'is_retirement'          => (bool)$r['is_retirement'],
+        'activity'               => $r['activity'],
+        'excluded'               => (bool)$r['exclude_from_withdrawals'],
+    ], $stmt->fetchAll());
+}
+
+// Withdrawals and contributions from getPortfolioFlows() summed per month:
+// ['Y-m' => ['withdrawals' => float (positive), 'contributions' => float (positive)]].
+function sumPortfolioFlowsByMonth(array $flows): array {
+    $out = [];
+    foreach ($flows as $f) {
+        $ym = substr($f['date'], 0, 7);
+        $out[$ym] ??= ['withdrawals' => 0.0, 'contributions' => 0.0];
+        if ($f['amount'] > 0) $out[$ym]['withdrawals']   += $f['amount'];
+        else                  $out[$ym]['contributions'] += -$f['amount'];
+    }
+    return $out;
+}
+
 // ── FIFO tax lots ─────────────────────────────────────────────
 
 // True when shares acquired on $acquired and disposed of on $sold were held more
@@ -1983,8 +2066,8 @@ function getDashboardNetWorthToday(): array {
 function getDashboardCashFlow(int $months = 6): array {
     $db = getDB();
     $from = date('Y-m-01', strtotime('-' . ($months - 1) . ' months'));
-    // Same definitions as the Income vs. Expense report's default view, so the two
-    // agree: categorized splits only — income categories are income, expense categories
+    // Same definitions as the Income vs. Expense report's default view (portfolio
+    // withdrawals included), so the two agree: categorized splits only — income categories are income, expense categories
     // are expenses (refunds net against them) — on the same accounts (active, not
     // investment, investment-cash, asset or crypto), transfers left out. Opening
     // balances, asset revaluations and other uncategorized amounts aren't income.
@@ -2006,19 +2089,28 @@ function getDashboardCashFlow(int $months = 6): array {
     $stmt->execute([$from]);
     $rows = $stmt->fetchAll();
 
+    // Portfolio withdrawals count as income and contributions go on their own line,
+    // as in Income vs. Expense (its default view, same accounts)
+    $spendIds = array_map('intval', $db->query(
+        "SELECT id FROM accounts WHERE is_active = 1 AND is_investment_cash = 0
+           AND type NOT IN ('Investment','Asset','Crypto')"
+    )->fetchAll(PDO::FETCH_COLUMN));
+    $pw = sumPortfolioFlowsByMonth(getPortfolioFlows($from, date('Y-m-t'), ['accounts' => $spendIds]));
+
     // Build full month list so gaps show as zero
-    $labels = []; $income = []; $expenses = [];
+    $labels = []; $income = []; $expenses = []; $toInv = [];
     $byYm   = array_column($rows, null, 'ym');
     $cur    = new DateTime($from);
     $end    = new DateTime(date('Y-m-01'));
     while ($cur <= $end) {
         $ym        = $cur->format('Y-m');
         $labels[]  = $cur->format('M y');
-        $income[]  = round((float)($byYm[$ym]['income']   ?? 0), 2);
+        $income[]  = round((float)($byYm[$ym]['income']   ?? 0) + ($pw[$ym]['withdrawals'] ?? 0), 2);
         $expenses[] = round((float)($byYm[$ym]['expenses'] ?? 0), 2);
+        $toInv[]    = round($pw[$ym]['contributions'] ?? 0, 2);
         $cur->modify('+1 month');
     }
-    return ['labels' => $labels, 'income' => $income, 'expenses' => $expenses];
+    return ['labels' => $labels, 'income' => $income, 'expenses' => $expenses, 'to_investments' => $toInv];
 }
 
 function getDashboardGoals(): array {
@@ -2188,6 +2280,23 @@ function getDashboardWatchlist(): array {
             'day_chg_pct' => $dayChgPct,
         ];
     }, $rows);
+}
+
+// Portfolio Withdrawals widget: this year's and last year's withdrawals from the
+// portfolio (getPortfolioFlows()), split into retirement and non-retirement, with
+// this year's monthly average.
+function getDashboardPortfolioWithdrawals(): array {
+    $y     = (int)date('Y');
+    $empty = ['total' => 0.0, 'ret' => 0.0, 'nonret' => 0.0, 'count' => 0];
+    $years = [$y => $empty, $y - 1 => $empty];
+    foreach (getPortfolioFlows(($y - 1) . '-01-01', date('Y-m-d')) as $f) {
+        if ($f['amount'] <= 0) continue;
+        $fy = (int)substr($f['date'], 0, 4);
+        $years[$fy]['total'] += $f['amount'];
+        $years[$fy][$f['is_retirement'] ? 'ret' : 'nonret'] += $f['amount'];
+        $years[$fy]['count']++;
+    }
+    return ['years' => $years, 'avg' => $years[$y]['total'] / max(1, (int)date('n'))];
 }
 
 // Refresh-prices icon button for the dashboard header and the investment widget

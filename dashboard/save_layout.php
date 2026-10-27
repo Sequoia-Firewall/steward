@@ -21,7 +21,7 @@ const VALID_WIDGETS = [
     'key_indicators', 'goals', 'loans',
     'market_indexes', 'top_movers', 'portfolio_movers', 'most_active',
     'crypto', 'watchlist',
-    'portfolio_snapshot', 'asset_allocation', 'realized_gains',
+    'portfolio_snapshot', 'asset_allocation', 'realized_gains', 'portfolio_withdrawals',
     'bookmarks', 'notepad',
 ];
 

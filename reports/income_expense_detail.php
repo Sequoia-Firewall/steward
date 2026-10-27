@@ -10,7 +10,7 @@ header('Content-Type: application/json');
 
 $db = getDB();
 
-$type      = ($_GET['type'] ?? '') === 'income' ? 'income' : 'expense';
+$type      = in_array($_GET['type'] ?? '', ['income', 'toinv'], true) ? $_GET['type'] : 'expense';
 $startDate = $_GET['start'] ?? '';
 $endDate   = $_GET['end']   ?? '';
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
@@ -25,7 +25,7 @@ require_once __DIR__ . '/../includes/report_acct_filter.php';
 // ── Category filter (same logic/params as the report) ───────────
 require_once __DIR__ . '/../includes/report_cat_filter.php';
 
-[$topCats, $descendants] = loadCategoryFilterData($db, $type);
+[$topCats, $descendants] = loadCategoryFilterData($db, $type === 'toinv' ? 'expense' : $type);
 $allTopIds = array_column($topCats, 'id');
 $catParam  = trim($_GET[$type === 'income' ? 'inccats' : 'expcats'] ?? '');
 [$selectedTopIds, $filteringCats] = parseCatTopSelection($catParam, $allTopIds);
@@ -35,6 +35,35 @@ if ($filteringCats) {
     $catParams = expandCatTopSelection($selectedTopIds, $descendants);
     $ph        = implode(',', array_fill(0, count($catParams), '?'));
     $catWhere  = "AND ts.category_id IN ($ph)";
+}
+
+// Portfolio withdrawals (income) and contributions (To Investments), same rules as the
+// report: on unless pw=0; withdrawals only when no income-category filter is active.
+$countWithdrawals = ($_GET['pw'] ?? '1') !== '0';
+$flowRows = [];
+if ($countWithdrawals && ($type === 'toinv' || ($type === 'income' && !$filteringCats))) {
+    foreach (getPortfolioFlows($startDate, $endDate, ['accounts' => $selectedAcctIds,
+             'skip_income' => ($_GET['incinv'] ?? '') === '1']) as $f) {
+        if (($type === 'income') !== ($f['amount'] > 0)) continue;
+        $flowRows[] = [
+            'id'            => $f['id'],
+            'date'          => $f['date'],
+            'payee'         => $f['payee'],
+            'memo'          => $f['memo'],
+            'account_id'    => $f['account_id'],
+            'account_name'  => $f['account_name'],
+            'category_name' => ($type === 'income' ? 'Portfolio Withdrawal from ' : 'To ') . $f['portfolio_account_name'],
+            'amount'        => $f['amount'],
+        ];
+    }
+}
+if ($type === 'toinv') {
+    echo json_encode([
+        'ok' => true, 'type' => $type, 'start' => $startDate, 'end' => $endDate,
+        'count' => count($flowRows), 'total' => array_sum(array_column($flowRows, 'amount')),
+        'transactions' => $flowRows,
+    ]);
+    exit;
 }
 
 $stmt = $db->prepare(
@@ -99,6 +128,8 @@ if ($type === 'income' && ($_GET['incinv'] ?? '') === '1') {
         ];
     }
 }
+
+$transactions = array_merge($transactions, $flowRows);
 
 echo json_encode([
     'ok'           => true,

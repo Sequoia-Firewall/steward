@@ -13,6 +13,7 @@ $form   = [
     'comment'             => '',
     'is_favorite'         => '0',
     'is_retirement'       => '0',
+    'is_education'        => '0',
     'min_balance'         => '0.00',
     'currency'            => 'USD',
     'opening_balance'     => '0.00',
@@ -30,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'comment'             => trim($_POST['comment'] ?? ''),
         'is_favorite'            => isset($_POST['is_favorite']) ? '1' : '0',
         'is_retirement'          => isset($_POST['is_retirement']) ? '1' : '0',
+        'is_education'           => isset($_POST['is_education']) ? '1' : '0',
         'exclude_from_net_worth' => isset($_POST['exclude_from_net_worth']) ? '1' : '0',
         'min_balance'         => $_POST['min_balance'] ?? '0.00',
         'currency'            => trim($_POST['currency'] ?? 'USD'),
@@ -64,13 +66,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 1. Investment / Crypto account
                 $stmt = $db->prepare(
                     'INSERT INTO accounts (name, type, institution, account_number, routing_number, comment,
-                                          is_favorite, is_retirement, min_balance, currency, opening_balance, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                                          is_favorite, is_retirement, is_education, min_balance, currency, opening_balance, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                 );
                 $stmt->execute([
                     $form['name'], $form['type'], $form['institution'],
                     $form['account_number'], $form['routing_number'], $form['comment'],
-                    $form['is_favorite'], $form['is_retirement'], (float)$form['min_balance'], $form['currency'],
+                    $form['is_favorite'], $form['is_retirement'], $form['is_education'], (float)$form['min_balance'], $form['currency'],
                     (float)$form['opening_balance'], currentUserId(),
                 ]);
                 $investId = (int)$db->lastInsertId();
@@ -378,6 +380,14 @@ include __DIR__ . '/../includes/header.php';
           <i class="bi bi-piggy-bank-fill text-success"></i> Retirement Account
         </label>
       </div>
+      <div class="form-check mb-2" id="educationToggle" style="display:none"
+           title="A 529 or other education savings account. Transfers out of it aren't counted as portfolio withdrawals (income).">
+        <input class="form-check-input" type="checkbox" name="is_education" id="isEducation"
+               <?= $form['is_education'] ? 'checked' : '' ?>>
+        <label class="form-check-label" for="isEducation">
+          <i class="bi bi-mortarboard-fill text-primary"></i> Education Account (529)
+        </label>
+      </div>
       <div class="form-check mb-2" id="excludeNWToggle" style="display:none">
         <input class="form-check-input" type="checkbox" name="exclude_from_net_worth" id="excludeFromNW">
         <label class="form-check-label" for="excludeFromNW">
@@ -410,6 +420,7 @@ function onTypeChange() {
 
   document.getElementById('investmentNotice').style.display  = type === 'Investment' ? '' : 'none';
   document.getElementById('retirementToggle').style.display  = isInvest && type !== 'Crypto' ? '' : 'none';
+  document.getElementById('educationToggle').style.display   = isInvest && type !== 'Crypto' ? '' : 'none';
   document.getElementById('excludeNWToggle').style.display   = isAsset  ? '' : 'none';
   document.getElementById('openingBalanceHint').style.display = (isInvest || isLoan) ? 'none' : '';
   document.getElementById('openingBalanceLabel').textContent  = isInvest ? 'Investment Opening Value' : 'Opening Balance';

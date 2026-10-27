@@ -28,6 +28,16 @@ $showAll            = !empty($_GET['all']);
 
 $transactions      = $isInvestAccount ? getInvestmentRegisterTransactions($id, $invSortCol, $sortDir) : getRegisterTransactions($id, $sortCol, $sortDir);
 
+// Transfers to/from the portfolio in a spending account: id => ['excluded' => bool,
+// 'withdrawal' => bool], for the right-click "Don't Count as Portfolio Withdrawal"
+// option and the excluded marker. See getPortfolioFlows().
+$pwFlows = [];
+if (in_array($account['type'], ['Checking', 'Savings', 'Banking', 'Credit Card'], true) && !$account['is_investment_cash']) {
+    foreach (getPortfolioFlows('1900-01-01', '9999-12-31', ['accounts' => [$id], 'include_excluded' => true]) as $_f) {
+        $pwFlows[$_f['id']] = ['excluded' => $_f['excluded'], 'withdrawal' => $_f['amount'] > 0];
+    }
+}
+
 // Limit displayed rows to the last 12 months unless ?all=1
 // (skip the cutoff entirely if it would hide the transaction we're deep-linking to)
 $hiddenCount = 0;
@@ -368,12 +378,15 @@ include __DIR__ . '/../includes/header.php';
         <tr class="register-row <?= $txn['cleared_status'] ?><?= $isInvReciprocal ? ' reg-row-locked' : '' ?>" data-id="<?= $txn['id'] ?>"
             data-type="<?= h($txn['type']) ?>" data-cleared="<?= h($txn['cleared_status']) ?>"
             data-payee="<?= h($txn['payee']) ?>"
+            <?php if (isset($pwFlows[(int)$txn['id']])): $_pw = $pwFlows[(int)$txn['id']]; ?>
+            data-pw="<?= $_pw['excluded'] ? 'excluded' : 'counted' ?>" data-pw-dir="<?= $_pw['withdrawal'] ? 'out' : 'in' ?>"
+            <?php endif; ?>
             onclick="selectTransaction(<?= $txn['id'] ?>)"
             title="<?= $isInvReciprocal ? 'Linked to a security-register entry — click for details' : 'Click to edit' ?>">
           <td class="col-num"><?= h($txn['num']) ?><span class="reg-txnid">#<?= (int)$txn['id'] ?></span></td>
           <td class="col-date"><?= formatDate($txn['transaction_date']) ?></td>
           <td class="col-payee">
-            <div class="payee-name"><?= $isInvReciprocal ? '<i class="bi bi-lock-fill text-muted small" title="Linked to security register"></i> ' : '' ?><?= h($txn['payee']) ?></div>
+            <div class="payee-name"><?= $isInvReciprocal ? '<i class="bi bi-lock-fill text-muted small" title="Linked to security register"></i> ' : '' ?><?= h($txn['payee']) ?><?php if (!empty($pwFlows[(int)$txn['id']]['excluded'])): ?> <i class="bi bi-slash-circle text-muted small pw-excluded-mark" title="Not counted as a portfolio withdrawal / contribution in reports"></i><?php endif; ?></div>
             <?php if ($txn['memo']): ?><div class="txn-memo"><?= h($txn['memo']) ?></div><?php endif; ?>
           </td>
           <td class="col-cat"><?= $catDisplay ?></td>
@@ -1247,6 +1260,9 @@ onActivityChange(); // initialise right-column fields immediately (DOM already r
   <button class="ctx-item" id="ctxFlip">
     <i class="bi bi-arrow-left-right"></i> Flip Debit / Credit
   </button>
+  <button class="ctx-item" id="ctxPwToggle">
+    <i class="bi bi-slash-circle"></i> <span id="ctxPwLabel">Don't Count as Portfolio Withdrawal</span>
+  </button>
   <div class="ctx-sep" id="ctxSep2"></div>
   <button class="ctx-item ctx-item-danger" id="ctxDelete">
     <i class="bi bi-trash"></i> Delete
@@ -1324,7 +1340,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const menu = document.getElementById('txnContextMenu');
   if (!menu) return;
 
-  let _ctxId = 0, _ctxType = '', _ctxCleared = '', _ctxPayee = '';
+  let _ctxId = 0, _ctxType = '', _ctxCleared = '', _ctxPayee = '', _ctxPw = '', _ctxPwDir = '';
 
   // ── Separator visibility ─────────────────────────────────
   function refreshSeps() {
@@ -1347,6 +1363,8 @@ document.addEventListener('DOMContentLoaded', function () {
     _ctxType    = row.dataset.type    || '';
     _ctxCleared = row.dataset.cleared || '';
     _ctxPayee   = row.dataset.payee   || '';
+    _ctxPw      = row.dataset.pw      || '';
+    _ctxPwDir   = row.dataset.pwDir   || '';
 
     const isTransfer   = _ctxType === 'transfer';
     const isReconciled = _ctxCleared === 'reconciled';
@@ -1359,6 +1377,12 @@ document.addEventListener('DOMContentLoaded', function () {
     show('ctxCopyTo',         !isTransfer);
     show('ctxFlip',           !isTransfer && !isReconciled);
     show('ctxDelete',         canDel);
+    show('ctxPwToggle',       _ctxPw !== '');
+    if (_ctxPw) {
+      const what = _ctxPwDir === 'out' ? 'Portfolio Withdrawal' : 'Contribution to Investments';
+      document.getElementById('ctxPwLabel').textContent =
+        (_ctxPw === 'excluded' ? 'Count as ' : "Don't Count as ") + what;
+    }
     refreshSeps();
 
     menu.style.left    = e.clientX + 'px';
@@ -1419,6 +1443,26 @@ document.addEventListener('DOMContentLoaded', function () {
       updateRowCleared(_ctxId, '');
       playUnclearChime();
       showToast('Marked as not cleared', 'success', { autoDismiss: 5000 });
+    });
+  });
+
+  // ── Count / don't count as a portfolio withdrawal ────────
+  document.getElementById('ctxPwToggle').addEventListener('click', function () {
+    hideMenu();
+    const exclude = _ctxPw !== 'excluded';
+    quickPost('set_withdrawal_exclusion', { exclude: exclude ? '1' : '0' }, function () {
+      const row = document.querySelector('.register-row[data-id="' + _ctxId + '"]');
+      if (row) {
+        row.dataset.pw = exclude ? 'excluded' : 'counted';
+        const name = row.querySelector('.payee-name');
+        const mark = name && name.querySelector('.pw-excluded-mark');
+        if (exclude && name && !mark) {
+          name.insertAdjacentHTML('beforeend', ' <i class="bi bi-slash-circle text-muted small pw-excluded-mark" title="Not counted as a portfolio withdrawal / contribution in reports"></i>');
+        } else if (!exclude && mark) {
+          mark.remove();
+        }
+      }
+      showToast(exclude ? 'No longer counted in withdrawal reports' : 'Counted in withdrawal reports again', 'success', { autoDismiss: 5000 });
     });
   });
 

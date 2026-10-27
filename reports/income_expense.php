@@ -82,6 +82,17 @@ if ($filteringExpCats) {
 // these have no category/split, so they're normally invisible to this report.
 $includeInvInc = ($_GET['incinv'] ?? '') === '1';
 
+// ── Portfolio withdrawals (on by default) ──────────────────────
+// Transfers from investment accounts into spending accounts count as income;
+// contributions go on their own "To Investments" line. See getPortfolioFlows().
+// Withdrawals carry no category, so an income-category filter leaves them out.
+$countWithdrawals = ($_GET['pw'] ?? '1') !== '0';
+$pwByMonth = $countWithdrawals
+    ? sumPortfolioFlowsByMonth(getPortfolioFlows($startDate, $endDate,
+        ['accounts' => $selectedAcctIds, 'skip_income' => $includeInvInc]))
+    : [];
+$pwInIncome = $countWithdrawals && !$filteringIncCats;
+
 // ── Data query — grouped by year+month ────────────────────────
 $incomeRows = $db->prepare(
     "SELECT YEAR(t.transaction_date) AS yr, MONTH(t.transaction_date) AS mo,
@@ -145,48 +156,57 @@ foreach ($expenseRows->fetchAll() as $r) {
 }
 
 // Build rows for every month in the range
-$months   = [];
-$totalInc = 0;
-$totalExp = 0;
+$months     = [];
+$totalInc   = 0;
+$totalExp   = 0;
+$totalPw    = 0;
+$totalToInv = 0;
 $cursor   = new DateTime(date('Y-m-01', strtotime($startDate)));
 $endDt    = new DateTime(date('Y-m-01', strtotime($endDate)));
 while ($cursor <= $endDt) {
     $ym    = $cursor->format('Y-m');
-    $inc   = $incomeMap[$ym]  ?? 0;
+    $pw    = $pwInIncome ? ($pwByMonth[$ym]['withdrawals'] ?? 0) : 0;
+    $toInv = $countWithdrawals ? ($pwByMonth[$ym]['contributions'] ?? 0) : 0;
+    $inc   = ($incomeMap[$ym] ?? 0) + $pw;
     $exp   = $expenseMap[$ym] ?? 0;
-    $net   = $inc - $exp;
-    $totalInc += $inc;
-    $totalExp += $exp;
+    $net   = $inc - $exp - $toInv;
+    $totalInc   += $inc;
+    $totalExp   += $exp;
+    $totalPw    += $pw;
+    $totalToInv += $toInv;
     // Intersect the calendar month with the report's overall date range, since
     // the first/last rows may be partial months (e.g. "Last 30 Days").
     $rowStart = max($cursor->format('Y-m-01'), $startDate);
     $rowEnd   = min($cursor->format('Y-m-t'),  $endDate);
-    $months[] = ['label' => $cursor->format('M Y'), 'inc' => $inc, 'exp' => $exp, 'net' => $net,
-                 'start' => $rowStart, 'end' => $rowEnd];
+    $months[] = ['label' => $cursor->format('M Y'), 'inc' => $inc, 'exp' => $exp, 'toinv' => $toInv,
+                 'net' => $net, 'start' => $rowStart, 'end' => $rowEnd];
     $cursor->modify('+1 month');
 }
-$totalNet = $totalInc - $totalExp;
+$totalNet = $totalInc - $totalExp - $totalToInv;
 
 $chartLabels  = array_column($months, 'label');
 $chartIncome  = array_column($months, 'inc');
 $chartExpense = array_column($months, 'exp');
+$chartToInv   = array_column($months, 'toinv');
 $chartNet     = array_column($months, 'net');
 
 // ── CSV Export ─────────────────────────────────────────────────
 if (($_GET['export'] ?? '') === 'csv') {
     $csvRows = [];
     foreach ($months as $row) {
-        $csvRows[] = [$row['label'],
-                      $row['inc'] > 0 ? number_format($row['inc'], 2, '.', '') : '',
-                      $row['exp'] > 0 ? number_format($row['exp'], 2, '.', '') : '',
-                      number_format($row['net'], 2, '.', '')];
+        $csvRows[] = array_merge(
+            [$row['label'],
+             $row['inc'] > 0 ? number_format($row['inc'], 2, '.', '') : '',
+             $row['exp'] > 0 ? number_format($row['exp'], 2, '.', '') : ''],
+            $countWithdrawals ? [$row['toinv'] > 0 ? number_format($row['toinv'], 2, '.', '') : ''] : [],
+            [number_format($row['net'], 2, '.', '')]);
     }
-    $csvRows[] = ['Total',
-                  number_format($totalInc, 2, '.', ''),
-                  number_format($totalExp, 2, '.', ''),
-                  number_format($totalNet, 2, '.', '')];
+    $csvRows[] = array_merge(
+        ['Total', number_format($totalInc, 2, '.', ''), number_format($totalExp, 2, '.', '')],
+        $countWithdrawals ? [number_format($totalToInv, 2, '.', '')] : [],
+        [number_format($totalNet, 2, '.', '')]);
     outputCsv('income_expense_' . $startDate . '_' . $endDate . '.csv',
-              ['Period', 'Income', 'Expenses', 'Net'], $csvRows);
+              array_merge(['Period', 'Income', 'Expenses'], $countWithdrawals ? ['To Investments'] : [], ['Net']), $csvRows);
 }
 
 $pageTitle   = 'Income vs. Expense';
@@ -238,6 +258,14 @@ include __DIR__ . '/../includes/header.php';
       </label>
     </div>
   </div>
+  <div class="filter-group">
+    <div class="form-check form-check-sm mt-4" title="Transfers from investment accounts into spending accounts count as income; contributions show as To Investments">
+      <input type="hidden" name="pw" value="0">
+      <input class="form-check-input" type="checkbox" name="pw" value="1"
+             id="chkPw" <?= $countWithdrawals ? 'checked' : '' ?>>
+      <label class="form-check-label" for="chkPw">Count Portfolio Withdrawals as Income</label>
+    </div>
+  </div>
   <div class="filter-group filter-group-btns">
     <button type="submit" class="btn btn-sm btn-primary">Apply</button>
     <button type="submit" name="export" value="csv" class="btn btn-sm btn-outline-secondary">
@@ -249,7 +277,7 @@ include __DIR__ . '/../includes/header.php';
         $acctQs = $acctParam !== '' ? '&accts=' . urlencode($acctParam) : '';
         $catQs  = ($filteringIncCats ? '&inccats=' . urlencode(implode(',', $selectedIncTopIds)) : '')
                 . ($filteringExpCats ? '&expcats=' . urlencode(implode(',', $selectedExpTopIds)) : '');
-        $invQs  = $includeInvInc ? '&incinv=1' : '';
+        $invQs  = ($includeInvInc ? '&incinv=1' : '') . ($countWithdrawals ? '' : '&pw=0');
       ?>
       <a href="?dr=this_month<?= $acctQs . $catQs . $invQs ?>"
          class="btn btn-sm btn-outline-secondary<?= ($range === 'month' || $__preset === 'this_month') ? ' active' : '' ?>">This Month</a>
@@ -273,6 +301,9 @@ include __DIR__ . '/../includes/header.php';
     <?php if ($includeInvInc && $totalInvInc > 0): ?>
     <div class="tile-sub">includes <?= formatMoney($totalInvInc) ?> investment income</div>
     <?php endif; ?>
+    <?php if ($totalPw > 0): ?>
+    <div class="tile-sub">includes <?= formatMoney($totalPw) ?> portfolio withdrawals</div>
+    <?php endif; ?>
   </div>
   <?php if ($includeInvInc): ?>
   <div class="report-tile tile-neutral">
@@ -284,6 +315,12 @@ include __DIR__ . '/../includes/header.php';
     <div class="tile-label">Total Expenses</div>
     <div class="tile-value"><?= formatMoney($totalExp) ?></div>
   </div>
+  <?php if ($countWithdrawals): ?>
+  <div class="report-tile tile-neutral">
+    <div class="tile-label">To Investments</div>
+    <div class="tile-value"><?= formatMoney($totalToInv) ?></div>
+  </div>
+  <?php endif; ?>
   <div class="report-tile <?= $totalNet >= 0 ? 'tile-positive' : 'tile-negative' ?>">
     <div class="tile-label">Net Cash Flow</div>
     <div class="tile-value"><?= formatMoney($totalNet, true) ?></div>
@@ -302,6 +339,9 @@ include __DIR__ . '/../includes/header.php';
       <th>Period</th>
       <th class="text-end">Income</th>
       <th class="text-end">Expenses</th>
+      <?php if ($countWithdrawals): ?>
+      <th class="text-end" title="Money moved from spending accounts into investment accounts">To Investments</th>
+      <?php endif; ?>
       <th class="text-end">Net</th>
     </tr>
   </thead>
@@ -319,8 +359,15 @@ include __DIR__ . '/../includes/header.php';
         <a href="#" class="ie-amt-link" data-type="expense" data-start="<?= h($row['start']) ?>" data-end="<?= h($row['end']) ?>" data-label="<?= h($row['label']) ?>"><?= formatMoney($row['exp']) ?></a>
         <?php else: ?>—<?php endif; ?>
       </td>
+      <?php if ($countWithdrawals): ?>
+      <td class="text-end">
+        <?php if ($row['toinv'] > 0): ?>
+        <a href="#" class="ie-amt-link" data-type="toinv" data-start="<?= h($row['start']) ?>" data-end="<?= h($row['end']) ?>" data-label="<?= h($row['label']) ?>"><?= formatMoney($row['toinv']) ?></a>
+        <?php else: ?>—<?php endif; ?>
+      </td>
+      <?php endif; ?>
       <td class="text-end <?= $row['net'] >= 0 ? 'amount-credit' : 'amount-debit' ?>">
-        <?= ($row['inc'] > 0 || $row['exp'] > 0) ? formatMoney($row['net'], true) : '—' ?>
+        <?= ($row['inc'] > 0 || $row['exp'] > 0 || $row['toinv'] > 0) ? formatMoney($row['net'], true) : '—' ?>
       </td>
     </tr>
     <?php endforeach; ?>
@@ -338,6 +385,13 @@ include __DIR__ . '/../includes/header.php';
         <a href="#" class="ie-amt-link" data-type="expense" data-start="<?= h($startDate) ?>" data-end="<?= h($endDate) ?>" data-label="Total"><?= formatMoney($totalExp) ?></a>
         <?php else: ?>—<?php endif; ?>
       </td>
+      <?php if ($countWithdrawals): ?>
+      <td class="text-end">
+        <?php if ($totalToInv > 0): ?>
+        <a href="#" class="ie-amt-link" data-type="toinv" data-start="<?= h($startDate) ?>" data-end="<?= h($endDate) ?>" data-label="Total"><?= formatMoney($totalToInv) ?></a>
+        <?php else: ?>—<?php endif; ?>
+      </td>
+      <?php endif; ?>
       <td class="text-end <?= $totalNet >= 0 ? 'amount-credit' : 'amount-debit' ?>"><?= formatMoney($totalNet, true) ?></td>
     </tr>
   </tfoot>
@@ -389,6 +443,7 @@ include __DIR__ . '/../includes/header.php';
     inccats: <?= json_encode($incCatQueryVal) ?>,
     expcats: <?= json_encode($expCatQueryVal) ?>,
     incinv:  <?= json_encode($includeInvInc ? '1' : '') ?>,
+    pw:      <?= json_encode($countWithdrawals ? '1' : '0') ?>,
   };
 
   function esc(s) {
@@ -472,7 +527,7 @@ include __DIR__ . '/../includes/header.php';
   async function openIeDetail(type, start, end, label) {
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('ieDetailModal'));
     document.getElementById('ieDetailTitle').textContent =
-      (type === 'income' ? 'Income' : 'Expenses') + ' — ' + label;
+      ({income: 'Income', expense: 'Expenses', toinv: 'To Investments'}[type] || 'Expenses') + ' — ' + label;
     document.getElementById('ieDetailLoading').style.display = '';
     document.getElementById('ieDetailEmpty').style.display   = 'none';
     document.getElementById('ieDetailWrap').style.display    = 'none';
@@ -489,6 +544,7 @@ include __DIR__ . '/../includes/header.php';
       inccats: filters.inccats,
       expcats: filters.expcats,
       incinv:  filters.incinv,
+      pw:      filters.pw,
     });
 
     try {
@@ -532,6 +588,7 @@ function setCustomRange() {
   const income  = <?= json_encode(array_map('floatval', $chartIncome)) ?>;
   const expense = <?= json_encode(array_map('floatval', $chartExpense)) ?>;
   const net     = <?= json_encode(array_map('floatval', $chartNet)) ?>;
+  const toInv   = <?= json_encode(array_map('floatval', $chartToInv)) ?>;
 
   new Chart(document.getElementById('ieChart'), {
     type: 'bar',
@@ -540,6 +597,9 @@ function setCustomRange() {
       datasets: [
         { label: 'Income',   data: income,  backgroundColor: 'rgba(40,167,69,0.7)',  borderColor: 'rgba(40,167,69,1)',  borderWidth:1 },
         { label: 'Expenses', data: expense, backgroundColor: 'rgba(220,53,69,0.7)',  borderColor: 'rgba(220,53,69,1)',  borderWidth:1 },
+        <?php if ($countWithdrawals && $totalToInv > 0): ?>
+        { label: 'To Investments', data: toInv, backgroundColor: 'rgba(108,117,125,0.6)', borderColor: 'rgba(108,117,125,1)', borderWidth:1 },
+        <?php endif; ?>
         { label: 'Net',      data: net,     type: 'line', borderColor: 'rgba(13,110,253,1)', backgroundColor:'transparent', borderWidth:2, pointRadius:4, tension:0.3 }
       ]
     },
