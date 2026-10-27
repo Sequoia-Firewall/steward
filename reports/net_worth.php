@@ -12,9 +12,10 @@ $months = isset($_GET['months']) ? max(3, min(120, (int)$_GET['months'])) : 12;
 // For each month in range, sum all account balances as of end-of-month.
 // We calculate running balance: opening_balance + sum of transactions up to date.
 
-// Get all active accounts excluding those opted out of net worth
+// Get all active accounts excluding those opted out of net worth. Closed accounts are
+// kept: their history while open still counts, and they hold $0 once closed out.
 $accounts = $db->query(
-    "SELECT id, name, type, is_investment_cash, opening_balance FROM accounts WHERE is_active = 1 AND is_closed = 0 AND exclude_from_net_worth = 0"
+    "SELECT id, name, type, is_investment_cash, opening_balance FROM accounts WHERE is_active = 1 AND exclude_from_net_worth = 0"
 )->fetchAll();
 
 if (empty($accounts)) {
@@ -75,91 +76,9 @@ foreach ($accounts as $acc) {
 
 // ── Historical market values for investment accounts ───────────
 // Investment accounts (type Investment/Crypto, not cash sub-accounts) must use
-// market value (holdings × price) rather than transaction amounts, because
-// purchase transactions are recorded as cash outflows and make balances negative.
-$investAccts   = array_filter($accounts, fn($a) => isInvestLike($a['type']) && !$a['is_investment_cash']);
-$investAcctIds = array_column(array_values($investAccts), 'id');
-$histMktValues = []; // eom -> [acct_id -> market_value]
-
-if (!empty($investAcctIds)) {
-    $iph   = implode(',', array_fill(0, count($investAcctIds), '?'));
-    $iStmt = $db->prepare(
-        "SELECT t.account_id, it.investment_id, it.activity, it.quantity, it.price, t.transaction_date
-         FROM investment_transactions it
-         JOIN transactions t ON t.id = it.transaction_id
-         WHERE t.account_id IN ($iph)
-         ORDER BY t.transaction_date"
-    );
-    $iStmt->execute($investAcctIds);
-    $iTxns  = $iStmt->fetchAll();
-    $invIds = array_values(array_unique(array_column($iTxns, 'investment_id')));
-
-    $priceHist = [];
-    if (!empty($invIds)) {
-        $pph   = implode(',', array_fill(0, count($invIds), '?'));
-        $pStmt = $db->prepare(
-            "SELECT investment_id, price_date, close_price
-             FROM investment_prices WHERE investment_id IN ($pph)
-             ORDER BY investment_id, price_date"
-        );
-        $pStmt->execute($invIds);
-        foreach ($pStmt->fetchAll() as $p) {
-            $priceHist[(int)$p['investment_id']][] = [$p['price_date'], (float)$p['close_price']];
-        }
-    }
-
-    // Pre-compute latest price per investment per month-end (single pass each)
-    $priceAtEom = []; // inv_id -> [eom -> price]
-    foreach ($priceHist as $iid => $plist) {
-        $latest = 0.0; $pi = 0; $np = count($plist);
-        foreach ($monthPoints as $eom) {
-            while ($pi < $np && $plist[$pi][0] <= $eom) { $latest = $plist[$pi][1]; $pi++; }
-            $priceAtEom[$iid][$eom] = $latest;
-        }
-    }
-
-    // Fallback: for investments with no market price, forward-fill last known transaction price
-    $noPriceSet = array_flip(array_diff($invIds, array_keys($priceHist)));
-    if (!empty($noPriceSet)) {
-        $txnPricesByInv = [];
-        foreach ($iTxns as $row) {
-            $iid = (int)$row['investment_id'];
-            if (!isset($noPriceSet[$iid])) continue;
-            $p = (float)$row['price'];
-            if ($p > 0) $txnPricesByInv[$iid][] = [$row['transaction_date'], $p];
-        }
-        foreach ($txnPricesByInv as $iid => $plist) {
-            $latest = 0.0; $pi = 0; $np = count($plist);
-            foreach ($monthPoints as $eom) {
-                while ($pi < $np && $plist[$pi][0] <= $eom) { $latest = $plist[$pi][1]; $pi++; }
-                if ($latest > 0) $priceAtEom[$iid][$eom] = $latest;
-            }
-        }
-    }
-
-    // Accumulate holdings incrementally (one pass through sorted transactions)
-    $holdings = []; // acct_id -> [inv_id -> net_qty]
-    $ti = 0; $nt = count($iTxns);
-    foreach ($monthPoints as $eom) {
-        while ($ti < $nt && $iTxns[$ti]['transaction_date'] <= $eom) {
-            $row = $iTxns[$ti++];
-            $aid = (int)$row['account_id']; $iid = (int)$row['investment_id'];
-            $qty = (float)$row['quantity'];
-            if (in_array($row['activity'], ['buy','add','split','reinvest_div','reinvest_cap']))
-                $holdings[$aid][$iid] = ($holdings[$aid][$iid] ?? 0.0) + $qty;
-            elseif (in_array($row['activity'], ['sell','remove']))
-                $holdings[$aid][$iid] = ($holdings[$aid][$iid] ?? 0.0) - $qty;
-        }
-        foreach ($investAcctIds as $aid) {
-            $mv = 0.0;
-            foreach (($holdings[$aid] ?? []) as $iid => $qty) {
-                if ($qty < 0.000001) continue;
-                $mv += $qty * ($priceAtEom[$iid][$eom] ?? 0.0);
-            }
-            $histMktValues[$eom][$aid] = $mv;
-        }
-    }
-}
+// market value (holdings × price) rather than transaction amounts. A security with no
+// market price on a month end is valued at its last transaction price.
+$histMktValues = getHistoricalInvestmentMarketValues($accounts, $monthPoints, $txnCutoff); // eom -> [acct_id -> market_value]
 
 // ── Now compute net worth per month point ──────────────────────
 $chartLabels = [];

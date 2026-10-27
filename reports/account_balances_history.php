@@ -129,89 +129,9 @@ if (!empty($selectedAccounts) && !empty($periodPoints)) {
     }
 
     // ── Historical market values for investment accounts ───────
-    $investAccts   = array_filter($selectedAccounts, fn($a) => isInvestLike($a['type']));
-    $investAcctIds = array_values(array_map(fn($a) => (int)$a['id'], $investAccts));
-    $histMktValues = []; // eop -> [acct_id -> float]
-
-    if (!empty($investAcctIds)) {
-        $iph   = implode(',', array_fill(0, count($investAcctIds), '?'));
-        $iStmt = $db->prepare(
-            "SELECT t.account_id, it.investment_id, it.activity, it.quantity, it.price, t.transaction_date
-             FROM investment_transactions it
-             JOIN transactions t ON t.id = it.transaction_id
-             WHERE t.account_id IN ($iph) AND t.transaction_date <= ?
-             ORDER BY t.transaction_date"
-        );
-        $iStmt->execute([...$investAcctIds, $cutoff]);
-        $iTxns  = $iStmt->fetchAll();
-        $invIds = array_values(array_unique(array_column($iTxns, 'investment_id')));
-
-        $priceAtEop = []; // inv_id -> [eop -> price]
-        if (!empty($invIds)) {
-            $pph   = implode(',', array_fill(0, count($invIds), '?'));
-            $pStmt = $db->prepare(
-                "SELECT investment_id, price_date, close_price
-                 FROM investment_prices WHERE investment_id IN ($pph) AND price_date <= ?
-                 ORDER BY investment_id, price_date"
-            );
-            $pStmt->execute([...$invIds, $cutoff]);
-            $priceHist = [];
-            foreach ($pStmt->fetchAll() as $p) {
-                $priceHist[(int)$p['investment_id']][] = [$p['price_date'], (float)$p['close_price']];
-            }
-            foreach ($priceHist as $iid => $plist) {
-                $latest = 0.0; $pi = 0; $np = count($plist);
-                foreach ($periodPoints as $eop) {
-                    while ($pi < $np && $plist[$pi][0] <= $eop) { $latest = $plist[$pi][1]; $pi++; }
-                    $priceAtEop[$iid][$eop] = $latest;
-                }
-            }
-        }
-
-        // Fallback: for investments with no market price, forward-fill last known transaction price
-        $noPriceSet = array_flip(array_diff($invIds, array_keys($priceHist)));
-        if (!empty($noPriceSet)) {
-            $txnPricesByInv = [];
-            foreach ($iTxns as $row) {
-                $iid = (int)$row['investment_id'];
-                if (!isset($noPriceSet[$iid])) continue;
-                $p = (float)$row['price'];
-                if ($p > 0) $txnPricesByInv[$iid][] = [$row['transaction_date'], $p];
-            }
-            foreach ($txnPricesByInv as $iid => $plist) {
-                $latest = 0.0; $pi = 0; $np = count($plist);
-                foreach ($periodPoints as $eop) {
-                    while ($pi < $np && $plist[$pi][0] <= $eop) { $latest = $plist[$pi][1]; $pi++; }
-                    if ($latest > 0) $priceAtEop[$iid][$eop] = $latest;
-                }
-            }
-        }
-
-        // Accumulate holdings per period (single pass, incremental)
-        $holdings = []; // acct_id -> [inv_id -> net_qty]
-        $ti = 0; $nt = count($iTxns);
-        foreach ($periodPoints as $eop) {
-            while ($ti < $nt && $iTxns[$ti]['transaction_date'] <= $eop) {
-                $row = $iTxns[$ti++];
-                $aid = (int)$row['account_id'];
-                $iid = (int)$row['investment_id'];
-                $qty = (float)$row['quantity'];
-                if (in_array($row['activity'], ['buy','add','split','reinvest_div','reinvest_cap'])) {
-                    $holdings[$aid][$iid] = ($holdings[$aid][$iid] ?? 0.0) + $qty;
-                } elseif (in_array($row['activity'], ['sell','remove'])) {
-                    $holdings[$aid][$iid] = ($holdings[$aid][$iid] ?? 0.0) - $qty;
-                }
-            }
-            foreach ($investAcctIds as $aid) {
-                $mv = 0.0;
-                foreach (($holdings[$aid] ?? []) as $iid => $qty) {
-                    if ($qty < 0.000001) continue;
-                    $mv += $qty * ($priceAtEop[$iid][$eop] ?? 0.0);
-                }
-                $histMktValues[$eop][$aid] = $mv;
-            }
-        }
-    }
+    // A security with no market price on a period end is valued at its last
+    // transaction price (see getInvestmentPricesAtDates()).
+    $histMktValues = getHistoricalInvestmentMarketValues($selectedAccounts, $periodPoints, $cutoff); // eop -> [acct_id -> float]
 
     // ── Balance per account per period ──────────────────────────
     foreach ($periodPoints as $eop) {

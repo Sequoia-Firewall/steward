@@ -90,26 +90,7 @@ $chartCost       = [];
 $hasPriceHistory = false;
 
 if (!empty($allTxns)) {
-    $invIds       = array_values(array_unique(array_column($allTxns, 'investment_id')));
-    $placeholders = implode(',', array_fill(0, count($invIds), '?'));
-
-    $priceStmt = $db->prepare(
-        "SELECT investment_id, price_date, close_price
-         FROM investment_prices
-         WHERE investment_id IN ({$placeholders})
-         ORDER BY investment_id, price_date"
-    );
-    $priceStmt->execute($invIds);
-    $priceRows = $priceStmt->fetchAll();
-    $hasPriceHistory = !empty($priceRows);
-
-    $priceHistory = [];
-    foreach ($priceRows as $p) {
-        $priceHistory[(int)$p['investment_id']][] = [
-            'date'  => $p['price_date'],
-            'price' => (float)$p['close_price'],
-        ];
-    }
+    $invIds = array_values(array_unique(array_map('intval', array_column($allTxns, 'investment_id'))));
 
     // Monthly snapshots: last day of each month from first transaction to today
     $snapDates = [];
@@ -121,13 +102,16 @@ if (!empty($allTxns)) {
         $ym = substr(date('Y-m-d', strtotime($lastDay . ' +1 day')), 0, 7);
     }
 
-    // Walk through transactions and prices in one pass per snapshot
+    // Price at each snapshot: latest market close, or else the last transaction price
+    // for a security with no market price yet on that date.
+    $snapPrices      = getInvestmentPricesAtDates($invIds, $snapDates);
+    $hasPriceHistory = !empty($snapPrices);
+
+    // Walk through transactions in one pass per snapshot
     $sharesHeld   = [];
     $cumCostBasis = 0.0;
     $txnIdx       = 0;
     $txnCount     = count($allTxns);
-    $priceCursors = array_fill_keys($invIds, 0);
-    $lastPrice    = array_fill_keys($invIds, null);
 
     foreach ($snapDates as $snapDate) {
         while ($txnIdx < $txnCount && $allTxns[$txnIdx]['txn_date'] <= $snapDate) {
@@ -147,22 +131,11 @@ if (!empty($allTxns)) {
             $txnIdx++;
         }
 
-        foreach ($invIds as $invId) {
-            if (!isset($priceHistory[$invId])) continue;
-            $prices = $priceHistory[$invId];
-            $c = $priceCursors[$invId];
-            while ($c < count($prices) && $prices[$c]['date'] <= $snapDate) {
-                $lastPrice[$invId] = $prices[$c]['price'];
-                $c++;
-            }
-            $priceCursors[$invId] = $c;
-        }
-
         $mv = 0.0;
         foreach ($sharesHeld as $key => $shares) {
             if ($shares < 0.000001) continue;
             $invId = (int)explode(':', $key)[0];
-            $p     = $lastPrice[$invId] ?? null;
+            $p     = $snapPrices[$invId][$snapDate]['price'] ?? null;
             if ($p !== null) $mv += $shares * $p;
         }
 
@@ -173,7 +146,7 @@ if (!empty($allTxns)) {
 }
 
 // ── Holdings table rows ────────────────────────────────────────
-$latestPrices    = getLatestInvestmentPrices();
+$latestPrices    = _addTransactionPriceFallback(getLatestInvestmentPrices(), null, date('Y-m-d'));
 // Chronological per-account replay — correctly re-bases cost basis after each
 // sale, unlike a lifetime SUM($ bought)/SUM(shares bought) average. (The "Amount
 // Invested" chart line above is a separate, intentionally cumulative metric and

@@ -905,7 +905,7 @@ pre code {
     </p>
     <ul>
       <li>Securities are grouped by type (Equities, ETFs, Mutual Funds, etc.), matching the Portfolio layout.</li>
-      <li>Each row shows the security name, symbol, CUSIP, current price with day change and percentage, country, and memo.</li>
+      <li>Each row shows the security name, symbol, CUSIP, current price with day change and percentage, country, and memo. A Saturday- or Sunday-dated price (statement imports date Friday's close on the weekend) is treated as Friday's close, so its day change is measured against the close before Friday. Cryptocurrency weekend prices are real trading days and are compared with the day before.</li>
       <li>Click any price to open the <strong>Price History</strong> panel — enter manual quotes or fetch the current price.</li>
       <li>Click <strong>Fetch Prices</strong> to retrieve current quotes for all watchlisted securities with a valid ticker.</li>
       <li>To add a security to the Watchlist, open it via <strong>Portfolio</strong> or the investment transaction form and check <strong>Add to Watchlist</strong>.</li>
@@ -998,6 +998,15 @@ pre code {
     </p>
 
     <h3>Investment Reports</h3>
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
+      <strong>Securities without a market price.</strong> Some holdings, such as 401(k) trust
+      funds and 529 plan options, have no price feed, or one that starts years after you bought
+      them. Wherever a value is needed for a date — Net Worth, Account Balances (and its history),
+      Holdings, Portfolio Value History, Cost &amp; Profit Analysis and account balances — Steward
+      uses the latest market price on or before that date, or, if there is none, the per-share
+      price from the latest buy, sell, priced Add or reinvestment on or before it. Holdings marks
+      such prices <em>Last trade</em> with the trade date.
+    </div>
     <table class="feature-table">
       <tr><th style="width:220px">Report</th><th>Description</th></tr>
       <tr><td>Portfolio Performance</td><td>Unrealized gains, cost basis, and return % for all current holdings.</td></tr>
@@ -1035,7 +1044,7 @@ pre code {
     <table class="feature-table">
       <tr><th style="width:220px">Report</th><th>Description</th></tr>
       <tr><td>Account Balances</td><td>All account balances grouped by type.</td></tr>
-      <tr><td>Net Worth Over Time</td><td>Month-by-month net worth chart — assets minus liabilities.</td></tr>
+      <tr><td>Net Worth Over Time</td><td>Month-by-month net worth chart — assets minus liabilities. Closed accounts are included: they count while they were open and hold $0 after being closed out.</td></tr>
       <tr><td>Account Balances History</td><td>Historical balance trends for selected accounts. Supports filtering by account type, and a chart-type toggle between Line and Stacked Bar.</td></tr>
     </table>
 

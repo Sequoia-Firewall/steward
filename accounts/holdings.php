@@ -48,7 +48,10 @@ $rawHoldings = $stmt->fetchAll();
 // Always pass $asOf (not null) so future-dated transactions are excluded the
 // same way the net_quantity query above excludes them via `<= $asOf`.
 $costBasesByAccount = getInvestmentCostBasesByAccount($asOf);
-$latestPrices        = $isHistorical ? getInvestmentPricesAsOf($asOf) : getLatestInvestmentPrices();
+// A security with no market price yet uses its last transaction price (source 'transaction')
+$latestPrices        = $isHistorical
+    ? getInvestmentPricesAsOf($asOf)
+    : _addTransactionPriceFallback(getLatestInvestmentPrices(), null, $today);
 
 // Build display rows + totals
 $rows             = [];
@@ -66,6 +69,7 @@ foreach ($rawHoldings as $h) {
 
     $price       = $latestPrices[$invId]['price']      ?? null;
     $priceDate   = $latestPrices[$invId]['price_date'] ?? null;
+    $priceFromTxn = ($latestPrices[$invId]['source'] ?? '') === 'transaction';
     $marketValue = $price !== null ? $price * $qty : null;
     $gainLoss    = $marketValue !== null ? $marketValue - $costBasis : null;
     $gainLossPct = ($gainLoss !== null && $costBasis > 0) ? ($gainLoss / $costBasis) * 100 : null;
@@ -83,6 +87,7 @@ foreach ($rawHoldings as $h) {
         'qty'           => $qty,
         'price'         => $price,
         'price_date'    => $priceDate,
+        'price_from_txn'=> $priceFromTxn,
         'market_value'  => $marketValue,
         'cost_basis'    => $costBasis,
         'gain_loss'     => $gainLoss,
@@ -237,7 +242,7 @@ const HOLDINGS_ACCT  = <?= json_encode($account['name']) ?>;
             <?= formatMoney($r['price']) ?>
           </a>
           <?php if ($r['price_date']): ?>
-          <div class="holdings-price-date text-muted"><?= formatDate($r['price_date']) ?></div>
+          <div class="holdings-price-date text-muted"<?= $r['price_from_txn'] ? ' title="No market price on record — this is the price from the last transaction"' : '' ?>><?= $r['price_from_txn'] ? 'Last trade ' : '' ?><?= formatDate($r['price_date']) ?></div>
           <?php endif; ?>
           <?php else: ?>
           <span class="text-muted">—</span>
@@ -315,7 +320,7 @@ const HOLDINGS_ACCT  = <?= json_encode($account['name']) ?>;
             <?= formatMoney($r['price']) ?>
           </a>
           <?php if ($r['price_date']): ?>
-          <div class="holdings-price-date text-muted"><?= formatDate($r['price_date']) ?></div>
+          <div class="holdings-price-date text-muted"<?= $r['price_from_txn'] ? ' title="No market price on record — this is the price from the last transaction"' : '' ?>><?= $r['price_from_txn'] ? 'Last trade ' : '' ?><?= formatDate($r['price_date']) ?></div>
           <?php endif; ?>
           <?php else: ?>
           <span class="text-muted">—</span>

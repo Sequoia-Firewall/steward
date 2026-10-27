@@ -591,6 +591,7 @@ function getInvestmentAccountMarketValues(): array {
     if (empty($rows)) return $cache = [];
 
     $latestPrices = getLatestInvestmentPrices();
+    $txnPrices    = getTransactionPriceHistory();
 
     $values = [];
     foreach ($rows as $row) {
@@ -601,7 +602,10 @@ function getInvestmentAccountMarketValues(): array {
         // back to the raw transaction-sum for accounts with no current holdings.
         if (!isset($values[$accountId])) $values[$accountId] = 0.0;
         if ($qty > 0.000001) {
-            $price = $latestPrices[$investmentId]['price'] ?? (float)($row['avg_cost_price'] ?? 0);
+            // Latest market price; for a fund with no market price yet, its last
+            // transaction price; average cost only if it has neither.
+            $lastTxn = !empty($txnPrices[$investmentId]) ? end($txnPrices[$investmentId])[1] : null;
+            $price   = $latestPrices[$investmentId]['price'] ?? $lastTxn ?? (float)($row['avg_cost_price'] ?? 0);
             $values[$accountId] += $price * $qty;
         }
     }
@@ -793,6 +797,10 @@ function getLatestInvestmentPrices(bool $forceRefresh = false): array {
     try {
         // Max-date-per-investment + correlated prev-close lookup instead of two window
         // functions over the whole table — both use the (investment_id, price_date) index.
+        // session_date: statement imports date Friday's close on Saturday (or Sunday), so
+        // for day change such a row is Friday's session and the previous close is the last
+        // close before that Friday, not Friday itself (which showed 0.00%). Crypto trades
+        // every day, so its weekend rows are real sessions.
         $rows = getDB()->query(
             'SELECT latest.investment_id, latest.close_price, latest.price_date, latest.source,
                     COALESCE(latest.volume, 0) AS volume,
@@ -800,13 +808,20 @@ function getLatestInvestmentPrices(bool $forceRefresh = false): array {
                         SELECT ip2.close_price
                         FROM investment_prices ip2
                         WHERE ip2.investment_id = latest.investment_id
-                          AND ip2.price_date < latest.price_date
+                          AND ip2.price_date < latest.session_date
                         ORDER BY ip2.price_date DESC
                         LIMIT 1
                     ) AS prev_close
              FROM (
-                 SELECT ip.investment_id, ip.close_price, ip.price_date, ip.source, ip.volume
+                 SELECT ip.investment_id, ip.close_price, ip.price_date, ip.source, ip.volume,
+                        CASE
+                            WHEN i.type = \'Cryptocurrency\' THEN ip.price_date
+                            WHEN DAYOFWEEK(ip.price_date) = 7 THEN ip.price_date - INTERVAL 1 DAY
+                            WHEN DAYOFWEEK(ip.price_date) = 1 THEN ip.price_date - INTERVAL 2 DAY
+                            ELSE ip.price_date
+                        END AS session_date
                  FROM investment_prices ip
+                 JOIN investments i ON i.id = ip.investment_id
                  JOIN (
                      SELECT investment_id, MAX(price_date) AS max_date
                      FROM investment_prices
@@ -830,7 +845,94 @@ function getLatestInvestmentPrices(bool $forceRefresh = false): array {
     return $cache = $prices;
 }
 
-// Latest close price per investment on or before $asOf. Unlike getLatestInvestmentPrices()
+// Per-share prices from the investment's own transactions: buys, sells, priced adds
+// and reinvestments (a quantity-weighted average when several fall on one day).
+// Returns [investment_id => [[date, price], ...]] in date order. Used as the price
+// when there's no market price — 401(k) trusts and 529 options often have no feed,
+// or one that starts years after purchase. Memoized for the request.
+function getTransactionPriceHistory(): array {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    try {
+        $rows = getDB()->query(
+            "SELECT it.investment_id, t.transaction_date,
+                    SUM(it.price * it.quantity) / SUM(it.quantity) AS price
+             FROM investment_transactions it
+             JOIN transactions t ON t.id = it.transaction_id
+             WHERE it.activity IN ('buy', 'sell', 'add', 'reinvest_div', 'reinvest_cap')
+               AND it.price > 0 AND it.quantity > 0 AND it.investment_id IS NOT NULL
+             GROUP BY it.investment_id, t.transaction_date
+             ORDER BY it.investment_id, t.transaction_date"
+        )->fetchAll();
+    } catch (Exception $e) {
+        return $cache = [];
+    }
+    $hist = [];
+    foreach ($rows as $r) {
+        $hist[(int)$r['investment_id']][] = [$r['transaction_date'], (float)$r['price']];
+    }
+    return $cache = $hist;
+}
+
+// Price of each id on each date in $dates: the latest market close on or before
+// that date, or else the latest transaction price on or before it (see
+// getTransactionPriceHistory()). Ids with neither on a date are left out for that
+// date. Returns [investment_id => [date => ['price'=>, 'price_date'=>, 'source'=>
+// 'market'|'transaction']]]. Memoized per request by (ids, dates).
+function getInvestmentPricesAtDates(array $ids, array $dates): array {
+    static $cache = [];
+    $ids   = array_values(array_unique(array_map('intval', $ids)));
+    $dates = array_values(array_unique($dates));
+    if (empty($ids) || empty($dates)) return [];
+    sort($ids);
+    sort($dates);
+    $key = implode(',', $ids) . '|' . implode(',', $dates);
+    if (isset($cache[$key])) return $cache[$key];
+
+    $market = [];
+    try {
+        $ph   = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = getDB()->prepare(
+            "SELECT investment_id, price_date, close_price
+             FROM investment_prices
+             WHERE investment_id IN ($ph) AND price_date <= ?
+             ORDER BY investment_id, price_date"
+        );
+        $stmt->execute([...$ids, end($dates)]);
+        foreach ($stmt->fetchAll() as $p) {
+            $market[(int)$p['investment_id']][] = [$p['price_date'], (float)$p['close_price']];
+        }
+    } catch (Exception $e) {}
+    $txnHist = getTransactionPriceHistory();
+
+    // Walk each sorted list once alongside the sorted dates
+    $latestOnOrBefore = function (array $list) use ($dates): array {
+        $out = []; $cur = null; $i = 0; $n = count($list);
+        foreach ($dates as $d) {
+            while ($i < $n && $list[$i][0] <= $d) { $cur = $list[$i]; $i++; }
+            if ($cur !== null) $out[$d] = $cur;
+        }
+        return $out;
+    };
+
+    $result = [];
+    foreach ($ids as $iid) {
+        $m = isset($market[$iid])  ? $latestOnOrBefore($market[$iid])  : [];
+        $t = isset($txnHist[$iid]) ? $latestOnOrBefore($txnHist[$iid]) : [];
+        foreach ($dates as $d) {
+            if (isset($m[$d])) {
+                $result[$iid][$d] = ['price' => $m[$d][1], 'price_date' => $m[$d][0], 'source' => 'market'];
+            } elseif (isset($t[$d])) {
+                $result[$iid][$d] = ['price' => $t[$d][1], 'price_date' => $t[$d][0], 'source' => 'transaction'];
+            }
+        }
+    }
+    return $cache[$key] = $result;
+}
+
+// Latest close price per investment on or before $asOf, falling back to the latest
+// transaction price on or before $asOf for investments with no market price yet
+// (entries carry 'source' => 'market'|'transaction'). Unlike getLatestInvestmentPrices()
 // this is not memoized — callers pass a specific historical date, not "now".
 function getInvestmentPricesAsOf(string $asOf): array {
     try {
@@ -854,7 +956,25 @@ function getInvestmentPricesAsOf(string $asOf): array {
         $prices[(int)$row['investment_id']] = [
             'price'      => (float)$row['close_price'],
             'price_date' => $row['price_date'],
+            'source'     => 'market',
         ];
+    }
+    return _addTransactionPriceFallback($prices, null, $asOf);
+}
+
+// Fills in, for ids missing from $prices, the latest transaction price on or before
+// $asOf. $ids limits which ids are considered (null = every id with transaction prices).
+function _addTransactionPriceFallback(array $prices, ?array $ids, string $asOf): array {
+    foreach (getTransactionPriceHistory() as $iid => $list) {
+        if (isset($prices[$iid]) || ($ids !== null && !in_array($iid, $ids, true))) continue;
+        $hit = null;
+        foreach ($list as $pt) {
+            if ($pt[0] > $asOf) break;
+            $hit = $pt;
+        }
+        if ($hit !== null) {
+            $prices[$iid] = ['price' => $hit[1], 'price_date' => $hit[0], 'source' => 'transaction'];
+        }
     }
     return $prices;
 }
@@ -1011,9 +1131,10 @@ function _investmentPricesAsOf(array $ids, string $asOf): array {
         $out[(int)$r['investment_id']] = [
             'price'      => (float)$r['close_price'],
             'price_date' => $r['price_date'],
+            'source'     => 'market',
         ];
     }
-    return $out;
+    return _addTransactionPriceFallback($out, array_map('intval', $ids), $asOf);
 }
 
 // Builds a normalized % price-return series (rebased to 0% at each id's first
@@ -1304,8 +1425,8 @@ function getInvestmentPriceHistory(int $investmentId, bool $realOnly = false): a
              FROM investment_transactions it
              JOIN transactions t ON t.id = it.transaction_id
              WHERE it.investment_id = ?
-               AND it.activity IN (\'buy\', \'sell\', \'reinvest_div\', \'reinvest_cap\')
-               AND it.price > 0
+               AND it.activity IN (\'buy\', \'sell\', \'add\', \'reinvest_div\', \'reinvest_cap\')
+               AND it.price > 0 AND it.quantity > 0
              GROUP BY t.transaction_date'
         );
         $txnStmt->execute([$investmentId]);
@@ -1544,88 +1665,50 @@ function renderFlash(): string {
 
 // Reconstructs investment account market values at each given date (YYYY-MM-DD),
 // forward-filling the latest known price as of that date for each holding.
-function getHistoricalInvestmentMarketValues(array $accounts, array $points): array {
+function getHistoricalInvestmentMarketValues(array $accounts, array $points, ?string $txnCutoff = null): array {
+    // Market value (holdings × price) per investment account at each date in $points:
+    // [point => [acct_id => float]]. Prices come from getInvestmentPricesAtDates(), so a
+    // security with no market price on a date is valued at its last transaction price.
+    // $txnCutoff, if given, ignores transactions after that date (e.g. future-dated ones).
     // getDashboardNetWorth() and getDashboardNetWorthToday() both call this with the
-    // same account set but different $points — cache the expensive fetch (full
-    // transaction + price history for the account set) per request, keyed by the
-    // sorted investment-account-ID list, and only redo the per-$points projection below.
+    // same account set but different $points — cache the transaction fetch per request,
+    // keyed by the sorted investment-account-ID list and cutoff.
     static $fetchCache = [];
 
     $investAccts   = array_filter($accounts, fn($a) => isInvestLike($a['type']) && !$a['is_investment_cash']);
-    $investAcctIds = array_values(array_unique(array_column(array_values($investAccts), 'id')));
+    $investAcctIds = array_values(array_unique(array_map('intval', array_column(array_values($investAccts), 'id'))));
     $histMktValues = []; // point -> [acct_id -> float]
-    if (empty($investAcctIds)) return $histMktValues;
+    if (empty($investAcctIds) || empty($points)) return $histMktValues;
 
     sort($investAcctIds);
-    $cacheKey = implode(',', $investAcctIds);
+    $cacheKey = implode(',', $investAcctIds) . '|' . ($txnCutoff ?? '');
 
     if (isset($fetchCache[$cacheKey])) {
-        $iTxns     = $fetchCache[$cacheKey]['iTxns'];
-        $priceHist = $fetchCache[$cacheKey]['priceHist'];
+        $iTxns = $fetchCache[$cacheKey];
     } else {
-        $db    = getDB();
-        $iph   = implode(',', array_fill(0, count($investAcctIds), '?'));
-        $iStmt = $db->prepare(
-            "SELECT t.account_id, it.investment_id, it.activity, it.quantity, it.price, t.transaction_date
+        $iph    = implode(',', array_fill(0, count($investAcctIds), '?'));
+        $params = $investAcctIds;
+        $cutSql = '';
+        if ($txnCutoff !== null) { $cutSql = ' AND t.transaction_date <= ?'; $params[] = $txnCutoff; }
+        $iStmt = getDB()->prepare(
+            "SELECT t.account_id, it.investment_id, it.activity, it.quantity, t.transaction_date
              FROM investment_transactions it
              JOIN transactions t ON t.id = it.transaction_id
-             WHERE t.account_id IN ($iph)
-             ORDER BY t.transaction_date"
+             WHERE t.account_id IN ($iph)$cutSql
+             ORDER BY t.transaction_date, it.id"
         );
-        $iStmt->execute($investAcctIds);
-        $iTxns  = $iStmt->fetchAll();
-        $invIds = array_values(array_unique(array_column($iTxns, 'investment_id')));
-
-        $priceHist = [];
-        if (!empty($invIds)) {
-            $pph   = implode(',', array_fill(0, count($invIds), '?'));
-            $pStmt = $db->prepare(
-                "SELECT investment_id, price_date, close_price
-                 FROM investment_prices WHERE investment_id IN ($pph)
-                 ORDER BY investment_id, price_date"
-            );
-            $pStmt->execute($invIds);
-            foreach ($pStmt->fetchAll() as $p) {
-                $priceHist[(int)$p['investment_id']][] = [$p['price_date'], (float)$p['close_price']];
-            }
-        }
-
-        $fetchCache[$cacheKey] = ['iTxns' => $iTxns, 'priceHist' => $priceHist];
+        $iStmt->execute($params);
+        $iTxns = $fetchCache[$cacheKey] = $iStmt->fetchAll();
     }
 
-    $invIds = array_values(array_unique(array_column($iTxns, 'investment_id')));
-
-    $priceAtPoint = [];
-    foreach ($priceHist as $iid => $plist) {
-        $latest = 0.0; $pi = 0; $np = count($plist);
-        foreach ($points as $pt) {
-            while ($pi < $np && $plist[$pi][0] <= $pt) { $latest = $plist[$pi][1]; $pi++; }
-            $priceAtPoint[$iid][$pt] = $latest;
-        }
-    }
-
-    // Fallback: forward-fill last transaction price for investments with no market data
-    $noPriceSet = array_flip(array_diff($invIds, array_keys($priceHist)));
-    if (!empty($noPriceSet)) {
-        $txnPricesByInv = [];
-        foreach ($iTxns as $row) {
-            $iid = (int)$row['investment_id'];
-            if (!isset($noPriceSet[$iid])) continue;
-            $p = (float)$row['price'];
-            if ($p > 0) $txnPricesByInv[$iid][] = [$row['transaction_date'], $p];
-        }
-        foreach ($txnPricesByInv as $iid => $plist) {
-            $latest = 0.0; $pi = 0; $np = count($plist);
-            foreach ($points as $pt) {
-                while ($pi < $np && $plist[$pi][0] <= $pt) { $latest = $plist[$pi][1]; $pi++; }
-                if ($latest > 0) $priceAtPoint[$iid][$pt] = $latest;
-            }
-        }
-    }
+    $sortedPoints = $points;
+    sort($sortedPoints);
+    $invIds = array_values(array_unique(array_map('intval', array_column($iTxns, 'investment_id'))));
+    $prices = getInvestmentPricesAtDates($invIds, $sortedPoints);
 
     $holdings = [];
     $ti = 0; $nt = count($iTxns);
-    foreach ($points as $pt) {
+    foreach ($sortedPoints as $pt) {
         while ($ti < $nt && $iTxns[$ti]['transaction_date'] <= $pt) {
             $row = $iTxns[$ti++];
             $aid = (int)$row['account_id']; $iid = (int)$row['investment_id'];
@@ -1639,7 +1722,7 @@ function getHistoricalInvestmentMarketValues(array $accounts, array $points): ar
             $mv = 0.0;
             foreach (($holdings[$aid] ?? []) as $iid => $qty) {
                 if ($qty < 0.000001) continue;
-                $mv += $qty * ($priceAtPoint[$iid][$pt] ?? 0.0);
+                $mv += $qty * ($prices[$iid][$pt]['price'] ?? 0.0);
             }
             $histMktValues[$pt][$aid] = $mv;
         }

@@ -77,22 +77,10 @@ $holdingsStmt = $db->prepare(
 );
 $holdingsStmt->execute([':asOf' => $asOf]);
 
-// ── Latest prices on or before $asOf ─────────────────────────
-$priceStmt = $db->prepare(
-    "SELECT investment_id, close_price, price_date
-     FROM (
-         SELECT investment_id, close_price, price_date,
-                ROW_NUMBER() OVER (PARTITION BY investment_id ORDER BY price_date DESC) AS rn
-         FROM investment_prices
-         WHERE price_date <= :asOf
-     ) ranked
-     WHERE rn = 1"
-);
-$priceStmt->execute([':asOf' => $asOf]);
-$latestPrices = [];
-foreach ($priceStmt->fetchAll() as $row) {
-    $latestPrices[(int)$row['investment_id']] = (float)$row['close_price'];
-}
+// ── Prices on or before $asOf ─────────────────────────────────
+// Latest market close, or else the latest transaction price for a security with no
+// market price yet; average cost below is only a last resort.
+$latestPrices = array_map(fn($p) => $p['price'], getInvestmentPricesAsOf($asOf));
 
 // Build market value per account_id
 $acctMarketValue = [];
