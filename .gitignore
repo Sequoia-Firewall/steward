@@ -4,3 +4,5 @@ setup/.installed
 priorities.txt
 notes.txt
 build_package.sh
+feature_spec.md
+feature_plan.md
