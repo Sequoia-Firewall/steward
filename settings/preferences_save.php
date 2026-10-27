@@ -56,7 +56,7 @@ exit;
 
 function updateQuotesCron(bool $enabled, string $etTime): void
 {
-    $phpBin = PHP_BINARY ?: '/usr/bin/php';
+    $phpBin = cliPhpBinary();
     $script  = dirname(__DIR__) . '/scripts/fetch_prices.php';
     $marker  = '# steward-quotes';
     $cronLine = '';

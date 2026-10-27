@@ -31,7 +31,7 @@ $stmt = $db->prepare(
        c.id AS cat_id, c.name AS cat_name, c.type AS cat_type,
        sc.id AS sub_id, sc.name AS sub_name, sc.tax_related AS sub_tax,
        DATE_FORMAT(t.transaction_date, '%Y-%m') AS ym,
-       ABS(ts.amount) AS amount
+       ts.amount AS amount
      FROM transaction_splits ts
      JOIN transactions t  ON t.id  = ts.transaction_id
      JOIN categories   c  ON c.id  = ts.category_id
@@ -53,7 +53,8 @@ foreach ($rows as $r) {
     $key   = $useSubLevel ? 'sub_' . $r['sub_id'] : 'cat_' . $r['cat_id'];
     $label = $useSubLevel ? $r['cat_name'] . ' → ' . $r['sub_name'] : $r['cat_name'];
     $type  = $r['cat_type'] === 'income' ? 'income' : 'expense';
-    $amt   = (float)$r['amount'];
+    // Net refunds: expenses are stored negative, income positive
+    $amt   = $type === 'income' ? (float)$r['amount'] : -(float)$r['amount'];
 
     if (!isset($groups[$type][$key])) {
         $groups[$type][$key] = ['label' => $label, 'total' => 0.0, 'count' => 0];

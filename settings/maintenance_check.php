@@ -525,6 +525,7 @@ switch ($check) {
              LEFT JOIN accounts la ON la.id = a.linked_account_id
              JOIN categories c ON c.id = ts.category_id
              WHERE a.is_investment_cash = 1
+               AND t.amount > 0
                AND (la.id IS NULL OR la.type != 'Crypto')
                AND EXISTS (
                  SELECT 1 FROM investments i WHERE i.name = t.payee AND i.is_active = 1

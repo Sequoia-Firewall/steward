@@ -5,7 +5,8 @@ requireLogin();
 
 $db = getDB();
 
-$months = in_array((int)($_GET['months'] ?? 12), [6, 12, 18, 24]) ? (int)$_GET['months'] : 12;
+$months = (int)($_GET['months'] ?? 12);
+if (!in_array($months, [6, 12, 18, 24], true)) $months = 12;
 
 $endDate   = date('Y-m-d');
 $startDate = date('Y-m-01', strtotime('-' . ($months - 1) . ' months'));

@@ -49,7 +49,7 @@ $selectedAccounts = array_values(array_filter(
 if (!$filteringAccts) {
     $acctBtnLabel = 'All Accounts';
 } elseif (count($selectedIds) === 1) {
-    $m = reset(array_filter($allAccounts, fn($a) => (int)$a['id'] === $selectedIds[0]));
+    $m = array_values(array_filter($allAccounts, fn($a) => (int)$a['id'] === $selectedIds[0]))[0] ?? null;
     $acctBtnLabel = $m ? $m['name'] : '1 Account';
 } else {
     $acctBtnLabel = count($selectedIds) . ' Accounts';

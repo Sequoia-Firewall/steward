@@ -1384,7 +1384,8 @@ document.addEventListener('DOMContentLoaded', function () {
     hideMenu();
     quickPost('set_cleared', { status: 'cleared' }, function () {
       updateRowCleared(_ctxId, 'cleared');
-      showToast('Marked as cleared', 'success');
+      playClearChime();
+      showToast('Marked as cleared', 'success', { autoDismiss: 5000 });
     });
   });
 
@@ -1393,7 +1394,8 @@ document.addEventListener('DOMContentLoaded', function () {
     hideMenu();
     quickPost('set_cleared', { status: '' }, function () {
       updateRowCleared(_ctxId, '');
-      showToast('Marked as not cleared', 'success');
+      playUnclearChime();
+      showToast('Marked as not cleared', 'success', { autoDismiss: 5000 });
     });
   });
 

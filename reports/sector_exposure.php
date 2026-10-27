@@ -9,7 +9,7 @@ $db = getDB();
 
 // ── Account filter ─────────────────────────────────────────────
 $allAccounts = $db->query(
-    "SELECT id, name FROM accounts
+    "SELECT id, name, type FROM accounts
      WHERE type = 'Investment' AND is_investment_cash = 0 AND is_active = 1 AND is_closed = 0
      ORDER BY name"
 )->fetchAll();

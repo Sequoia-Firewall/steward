@@ -43,7 +43,7 @@ $selectedCards = array_values(array_filter(
 if (!$filteringAccts) {
     $acctBtnLabel = 'All Cards';
 } elseif (count($selectedIds) === 1) {
-    $m = reset(array_filter($allCards, fn($a) => (int)$a['id'] === $selectedIds[0]));
+    $m = array_values(array_filter($allCards, fn($a) => (int)$a['id'] === $selectedIds[0]))[0] ?? null;
     $acctBtnLabel = $m ? $m['name'] : '1 Card';
 } else {
     $acctBtnLabel = count($selectedIds) . ' Cards';

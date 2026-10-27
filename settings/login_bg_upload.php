@@ -7,6 +7,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ' . BASE_PATH . '/settings/preferences');
     exit;
 }
+
+// Detect post_max_size overflow: when exceeded, PHP empties $_POST and $_FILES entirely,
+// which makes the CSRF check fail with a confusing error. Catch it explicitly first.
+$maxLabel = round(uploadMaxBytes() / 1048576, 1) . ' MB';
+if (empty($_POST) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    setFlash('error', "The image is too large. The maximum upload size is {$maxLabel}.");
+    header('Location: ' . BASE_PATH . '/settings/preferences');
+    exit;
+}
 verifyCsrf();
 
 $dest   = __DIR__ . '/../assets/img/login_bg_custom.jpg';
@@ -24,6 +33,11 @@ if ($action === 'delete') {
 
 if ($action === 'upload') {
     $file = $_FILES['login_bg_image'] ?? null;
+    if ($file && in_array($file['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+        setFlash('error', "The image is too large. The maximum upload size is {$maxLabel}.");
+        header('Location: ' . BASE_PATH . '/settings/preferences');
+        exit;
+    }
     if (!$file || $file['error'] !== UPLOAD_ERR_OK) {
         setFlash('error', 'Upload failed. Please try again.');
         header('Location: ' . BASE_PATH . '/settings/preferences');

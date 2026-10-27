@@ -722,6 +722,34 @@ function setSetting(string $key, ?string $value): void {
     )->execute([$key, $value]);
 }
 
+// ── Server environment ─────────────────────────────────────────
+
+// Largest upload PHP will accept: the smaller of upload_max_filesize and post_max_size.
+function uploadMaxBytes(): int {
+    $toBytes = function (string $v): int {
+        $v = trim($v);
+        if ($v === '') return 0;
+        $n = (int)$v;
+        return match (strtolower(substr($v, -1))) {
+            'g' => $n * 1024 ** 3,
+            'm' => $n * 1024 ** 2,
+            'k' => $n * 1024,
+            default => $n,
+        };
+    };
+    $limits = array_filter([
+        $toBytes((string)ini_get('upload_max_filesize')),
+        $toBytes((string)ini_get('post_max_size')),
+    ], fn($b) => $b > 0);
+    return $limits ? min($limits) : 0;
+}
+
+// CLI php binary for cron lines. Under PHP-FPM, PHP_BINARY is the php-fpm daemon.
+function cliPhpBinary(): string {
+    $bin = PHP_BINDIR . '/php';
+    return is_executable($bin) ? $bin : '/usr/bin/php';
+}
+
 // ── Activity log ────────────────────────────────────────────────
 
 function logActivity(string $event, string $description, ?int $userId = null, ?string $userName = null): void {

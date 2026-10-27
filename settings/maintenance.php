@@ -62,7 +62,7 @@ include __DIR__ . '/../includes/header.php';
           ['orphaned_investment_txns',  'bi-graph-up',             'Orphaned Investment Transactions',
            'Investment activity records with no linked security — often caused by partial imports.'],
           ['categorized_investment_income', 'bi-cash-coin',        'Categorized Income in Investment-Cash Accounts',
-           'Cash-sweep transactions whose payee matches a known security but were entered as a plain categorized deposit instead of a Buy/Sell/Dividend/Interest activity — these bypass per-security income tracking. Crypto accounts are excluded, since they don\'t use the same buy/sell activity model.'],
+           'Cash-sweep transactions whose payee matches a known security but were entered as a plain categorized deposit instead of a Buy/Sell/Dividend/Interest activity — these bypass per-security income tracking. Only deposits are flagged, since foreign tax and ADR fee withdrawals are legitimately categorized. Crypto accounts are excluded, since they don\'t use the same buy/sell activity model.'],
         ];
         foreach ($checks as [$slug, $icon, $label, $desc]):
         ?>

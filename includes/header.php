@@ -394,9 +394,15 @@ if (!in_array($fontSizePref, ['small','normal','large'], true)) $fontSizePref = 
     <!-- Net Worth summary -->
     <?php
     $totalAssets = 0; $totalLiabilities = 0;
+    $_nwIds = array_map('intval', array_column($sidebarAccounts, 'id'));
     foreach ($sidebarAccounts as $acc) {
+        // Investment cash is added into its parent account first, so a negative
+        // cash balance doesn't land in Liabilities on its own.
+        if ($acc['type'] === 'investment-cash' && $acc['linked_account_id']
+            && in_array((int)$acc['linked_account_id'], $_nwIds, true)) continue;
         if (!empty($acc['exclude_from_net_worth'])) continue;
         $b = (float)$acc['current_balance'];
+        if (isset($cashById[(int)$acc['id']])) $b += (float)$cashById[(int)$acc['id']]['current_balance'];
         if ($acc['type'] === 'Credit Card') {
             if ($b < 0) $totalLiabilities += abs($b);
             else $totalAssets += $b;

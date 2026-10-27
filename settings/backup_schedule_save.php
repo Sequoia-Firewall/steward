@@ -39,7 +39,7 @@ setSetting('backup_dow',      (string)$dow);
 setSetting('backup_dom',      (string)$dom);
 
 // Build cron line
-$phpBin = PHP_BINARY ?: '/usr/bin/php';
+$phpBin = cliPhpBinary();
 $script = dirname(__DIR__) . '/scripts/backup.php';
 $cronLine = '';
 

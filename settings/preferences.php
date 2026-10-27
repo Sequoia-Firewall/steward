@@ -600,7 +600,8 @@ include __DIR__ . '/../includes/header.php';
           <div class="col-md-4">
             <label class="form-label fw-semibold">Login Background Image</label>
             <p class="text-muted small mb-0">
-              Upload a custom background photo for the sign-in page. JPEG, PNG, or WebP.
+              Upload a custom background photo for the sign-in page. JPEG, PNG, or WebP,
+              up to <?= h(round(uploadMaxBytes() / 1048576, 1)) ?> MB.
               Leave unset to use the default image.
             </p>
           </div>
@@ -652,7 +653,14 @@ include __DIR__ . '/../includes/header.php';
   </form>
   <script>
   document.getElementById('loginBgFileInput').addEventListener('change', function() {
-    if (this.files.length) document.getElementById('loginBgUploadForm').submit();
+    if (!this.files.length) return;
+    const maxBytes = <?= (int)uploadMaxBytes() ?>;
+    if (maxBytes > 0 && this.files[0].size > maxBytes) {
+      showToast('The image is too large. The maximum upload size is <?= h(round(uploadMaxBytes() / 1048576, 1)) ?> MB.', 'error');
+      this.value = '';
+      return;
+    }
+    document.getElementById('loginBgUploadForm').submit();
   });
   </script>
 

@@ -853,6 +853,35 @@ function playCashRegister() {
   } catch (_) { /* silently ignore if audio unavailable */ }
 }
 
+// ── Clear / un-clear chimes (short two-note glides) ───────────
+// Rising for marking cleared, falling for un-clearing; both softer and
+// shorter than the save sound so they don't read as a save.
+function _playTwoNoteChime(freqs) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const t   = ctx.currentTime;
+
+    freqs.forEach((freq, i) => {
+      const start = t + i * 0.09;
+      const osc = ctx.createOscillator();
+      const g   = ctx.createGain();
+      osc.type            = 'triangle';
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0.18, start);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(start); osc.stop(start + 0.22);
+    });
+
+    setTimeout(() => ctx.close().catch(() => {}), 500);
+  } catch (_) { /* silently ignore if audio unavailable */ }
+}
+
+function playClearChime()   { _playTwoNoteChime([659.25, 987.77]); } // E5 → B5
+function playUnclearChime() { _playTwoNoteChime([987.77, 659.25]); } // B5 → E5
+
 // ── Error sound (descending two-tone buzz) ────────────────────
 function playErrorSound() {
   try {

@@ -411,23 +411,23 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
                 'year'       => getDashboardSpending('year',       $acctIdsSpend),
                 '90days'     => getDashboardSpending('90days',     $acctIdsSpend),
             ]; ?>
+    <div class="spend-widget" data-live-widget="spending">
     <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-      <select class="form-select form-select-sm" style="width:auto;min-width:120px"
-              onchange="renderSpending(this.value)">
+      <select class="form-select form-select-sm sp-period" style="width:auto;min-width:120px">
         <option value="month">This Month</option>
         <option value="last_month">Last Month</option>
         <option value="year">This Year</option>
         <option value="90days">Last 90 Days</option>
       </select>
       <div class="spend-view-btns ms-auto">
-        <button class="spend-view-btn active" onclick="setSpendView('bar',this)" title="Bar view"><i class="bi bi-bar-chart-horizontal"></i></button>
-        <button class="spend-view-btn" onclick="setSpendView('pie',this)" title="Pie chart"><i class="bi bi-pie-chart-fill"></i></button>
+        <button class="spend-view-btn active" data-view="bar" title="Bar view"><i class="bi bi-bar-chart-horizontal"></i></button>
+        <button class="spend-view-btn" data-view="pie" title="Pie chart"><i class="bi bi-pie-chart-fill"></i></button>
       </div>
-      <div class="dropdown" id="spendAcctDrop">
-        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
-                id="spendAcctBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+      <div class="dropdown sp-acct-drop">
+        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle sp-acct-btn"
+                data-bs-toggle="dropdown" data-bs-auto-close="outside"
                 aria-expanded="false">
-          <span id="spendAcctLabel"><?= empty($acctIdsSpend) ? 'All Accounts' : count($acctIdsSpend) . (count($acctIdsSpend) === 1 ? ' Account' : ' Accounts') ?></span>
+          <span class="sp-acct-label"><?= empty($acctIdsSpend) ? 'All Accounts' : count($acctIdsSpend) . (count($acctIdsSpend) === 1 ? ' Account' : ' Accounts') ?></span>
         </button>
         <div class="dropdown-menu p-2" style="min-width:210px;max-height:220px;overflow-y:auto">
           <?php foreach ($pickerAccounts as $acc):
@@ -439,24 +439,21 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
           </label>
           <?php endforeach; ?>
           <div class="d-flex gap-1 mt-2 border-top pt-2">
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" onclick="spendSelectAll(true)">All</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" onclick="spendSelectAll(false)">None</button>
-            <button type="button" class="btn btn-sm btn-primary flex-fill" onclick="applySpendAccts()">Apply</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" data-sp-select="all">All</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" data-sp-select="none">None</button>
+            <button type="button" class="btn btn-sm btn-primary flex-fill sp-apply">Apply</button>
           </div>
         </div>
       </div>
     </div>
-    <div id="spendingTrackerBody"></div>
-    <canvas id="spendPieCanvas" style="display:none;max-height:240px;margin:0 auto"></canvas>
+    <div class="sp-body"></div>
+    <canvas class="sp-canvas" style="display:none;max-height:240px;margin:0 auto"></canvas>
+    </div>
     <script>
     (function(){
-      const spBase    = <?= json_encode(BASE_PATH) ?>;
-      const initData  = <?= json_encode(array_map(fn($rows) => array_values($rows), $spd)) ?>;
+      const spBase     = <?= json_encode(BASE_PATH) ?>;
+      const initData   = <?= json_encode(array_map(fn($rows) => array_values($rows), $spd)) ?>;
       const totalAccts = <?= count($pickerAccounts) ?>;
-      let dirty        = false;
-      let currentPeriod = 'month';
-      let viewMode      = 'bar';
-      let pieChart      = null;
 
       const PIE_COLORS = [
         '#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f',
@@ -467,115 +464,130 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
       function fmt(n){ return '$'+parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
       function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-      function getChecked() {
-        return [...document.querySelectorAll('#spendAcctDrop input[type=checkbox]:checked')].map(cb => +cb.value);
-      }
+      // One instance per copy of the widget (the dashboard tile, and the maximized
+      // modal copy). Every lookup is scoped to the instance's root, so the modal copy
+      // never acts on the hidden tile. `from` carries state over from another copy.
+      function initSpendingWidget(root, from) {
+        const st = root._spState = {
+          dirty:  from ? from.dirty  : false,
+          period: from ? from.period : 'month',
+          view:   from ? from.view   : 'bar',
+          pie:    null,
+        };
+        const $ = sel => root.querySelector(sel);
 
-      function destroyPie() {
-        if (pieChart) { pieChart.destroy(); pieChart = null; }
-      }
-
-      function renderRows(rows) {
-        const canvas = document.getElementById('spendPieCanvas');
-        const body   = document.getElementById('spendingTrackerBody');
-        destroyPie();
-        if (canvas) canvas.style.display = 'none';
-        if (!body) return;
-        if (!rows.length) { body.innerHTML = '<p class="text-muted small">No spending for this period.</p>'; body.style.display = ''; return; }
-        const total = rows.reduce((s,r) => s + parseFloat(r.total), 0);
-        let html = '<div class="spending-tracker">';
-        rows.forEach(r => {
-          const pct = total > 0 ? (parseFloat(r.total) / total * 100) : 0;
-          html += '<div class="spend-row">'
-            + '<div class="spend-label"><span class="spend-cat">'+esc(r.category)+'</span><span class="spend-amt">'+fmt(r.total)+'</span></div>'
-            + '<div class="progress spend-bar"><div class="progress-bar" style="width:'+pct.toFixed(1)+'%"></div></div>'
-            + '</div>';
-        });
-        html += '</div>';
-        body.innerHTML = html;
-        body.style.display = '';
-      }
-
-      function renderPie(rows) {
-        const canvas = document.getElementById('spendPieCanvas');
-        const body   = document.getElementById('spendingTrackerBody');
-        destroyPie();
-        if (body) { body.innerHTML = ''; body.style.display = 'none'; }
-        if (!canvas) return;
-        if (!rows.length) {
-          if (body) { body.innerHTML = '<p class="text-muted small">No spending for this period.</p>'; body.style.display = ''; }
-          canvas.style.display = 'none'; return;
+        function getChecked() {
+          return [...root.querySelectorAll('.sp-acct-drop input[type=checkbox]:checked')].map(cb => +cb.value);
         }
-        canvas.style.display = 'block';
-        if (typeof Chart === 'undefined') {
-          if (body) { body.innerHTML = '<p class="text-muted small">Chart library not loaded.</p>'; body.style.display = ''; }
-          canvas.style.display = 'none'; return;
+
+        function destroyPie() {
+          if (st.pie) { st.pie.destroy(); st.pie = null; }
         }
-        const labels = rows.map(r => r.category);
-        const data   = rows.map(r => parseFloat(r.total));
-        const colors = labels.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
-        pieChart = new Chart(canvas, {
-          type: 'pie',
-          data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 1 }] },
-          options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-              legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 6 } },
-              tooltip: { callbacks: { label: ctx => ' ' + ctx.label + ': ' + fmt(ctx.raw) } }
-            }
+
+        function renderRows(rows) {
+          const canvas = $('.sp-canvas');
+          const body   = $('.sp-body');
+          destroyPie();
+          if (canvas) canvas.style.display = 'none';
+          if (!body) return;
+          if (!rows.length) { body.innerHTML = '<p class="text-muted small">No spending for this period.</p>'; body.style.display = ''; return; }
+          const total = rows.reduce((s,r) => s + parseFloat(r.total), 0);
+          let html = '<div class="spending-tracker">';
+          rows.forEach(r => {
+            const pct = total > 0 ? (parseFloat(r.total) / total * 100) : 0;
+            html += '<div class="spend-row">'
+              + '<div class="spend-label"><span class="spend-cat">'+esc(r.category)+'</span><span class="spend-amt">'+fmt(r.total)+'</span></div>'
+              + '<div class="progress spend-bar"><div class="progress-bar" style="width:'+pct.toFixed(1)+'%"></div></div>'
+              + '</div>';
+          });
+          html += '</div>';
+          body.innerHTML = html;
+          body.style.display = '';
+        }
+
+        function renderPie(rows) {
+          const canvas = $('.sp-canvas');
+          const body   = $('.sp-body');
+          destroyPie();
+          if (body) { body.innerHTML = ''; body.style.display = 'none'; }
+          if (!canvas) return;
+          if (!rows.length) {
+            if (body) { body.innerHTML = '<p class="text-muted small">No spending for this period.</p>'; body.style.display = ''; }
+            canvas.style.display = 'none'; return;
           }
-        });
-      }
-
-      function render(rows) {
-        if (viewMode === 'pie') renderPie(rows);
-        else renderRows(rows);
-      }
-
-      async function loadSpending() {
-        if (!dirty) { render(initData[currentPeriod] || []); return; }
-        const accts  = getChecked();
-        if (accts.length === 0) { render([]); return; }
-        const params = new URLSearchParams({ period: currentPeriod });
-        if (accts.length < totalAccts) params.set('acct_ids', accts.join(','));
-        try {
-          const resp = await fetch(spBase + '/dashboard/spending_data.php?' + params);
-          const data = await resp.json();
-          if (data.ok) render(data.rows);
-        } catch(e) {
-          const body = document.getElementById('spendingTrackerBody');
-          if (body) { body.innerHTML = '<p class="text-danger small">Error loading data.</p>'; body.style.display = ''; }
+          canvas.style.display = 'block';
+          if (typeof Chart === 'undefined') {
+            if (body) { body.innerHTML = '<p class="text-muted small">Chart library not loaded.</p>'; body.style.display = ''; }
+            canvas.style.display = 'none'; return;
+          }
+          const labels = rows.map(r => r.category);
+          const data   = rows.map(r => parseFloat(r.total));
+          const colors = labels.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
+          st.pie = new Chart(canvas, {
+            type: 'pie',
+            data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 1 }] },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: {
+                legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12, padding: 6 } },
+                tooltip: { callbacks: { label: ctx => ' ' + ctx.label + ': ' + fmt(ctx.raw) } }
+              }
+            }
+          });
         }
+
+        function render(rows) {
+          if (st.view === 'pie') renderPie(rows);
+          else renderRows(rows);
+        }
+
+        async function loadSpending() {
+          if (!st.dirty) { render(initData[st.period] || []); return; }
+          const accts  = getChecked();
+          if (accts.length === 0) { render([]); return; }
+          const params = new URLSearchParams({ period: st.period });
+          if (accts.length < totalAccts) params.set('acct_ids', accts.join(','));
+          try {
+            const resp = await fetch(spBase + '/dashboard/spending_data.php?' + params);
+            const data = await resp.json();
+            if (data.ok) render(data.rows);
+          } catch(e) {
+            const body = $('.sp-body');
+            if (body) { body.innerHTML = '<p class="text-danger small">Error loading data.</p>'; body.style.display = ''; }
+          }
+        }
+
+        function setView(mode) {
+          st.view = mode;
+          root.querySelectorAll('.spend-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === mode));
+        }
+
+        $('.sp-period').value = st.period;
+        $('.sp-period').addEventListener('change', e => { st.period = e.target.value; loadSpending(); });
+        root.querySelectorAll('.spend-view-btn').forEach(b =>
+          b.addEventListener('click', () => { setView(b.dataset.view); loadSpending(); }));
+        root.querySelectorAll('[data-sp-select]').forEach(b =>
+          b.addEventListener('click', () => {
+            const all = b.dataset.spSelect === 'all';
+            root.querySelectorAll('.sp-acct-drop input[type=checkbox]').forEach(cb => cb.checked = all);
+          }));
+        $('.sp-apply').addEventListener('click', () => {
+          st.dirty = true;
+          const btn = $('.sp-acct-btn');
+          if (btn) bootstrap.Dropdown.getOrCreateInstance(btn).hide();
+          const sel = getChecked();
+          const lbl = $('.sp-acct-label');
+          if (lbl) lbl.textContent = (sel.length === 0 || sel.length >= totalAccts) ? 'All Accounts' : sel.length + (sel.length === 1 ? ' Account' : ' Accounts');
+          loadSpending();
+        });
+
+        setView(st.view);
+        loadSpending();
       }
 
-      window.renderSpending = function(period) { currentPeriod = period; loadSpending(); };
-
-      window.setSpendView = function(mode, btn) {
-        viewMode = mode;
-        document.querySelectorAll('.spend-view-btn').forEach(b => b.classList.remove('active'));
-        if (btn) btn.classList.add('active');
-        loadSpending();
-      };
-
-      window.spendSelectAll = function(all) {
-        document.querySelectorAll('#spendAcctDrop input[type=checkbox]').forEach(cb => cb.checked = all);
-      };
-
-      window.applySpendAccts = function() {
-        dirty = true;
-        const menu = document.querySelector('#spendAcctDrop .dropdown-menu');
-        const btn  = document.getElementById('spendAcctBtn');
-        if (menu) menu.classList.remove('show');
-        if (btn)  { btn.classList.remove('show'); btn.setAttribute('aria-expanded','false'); }
-        document.getElementById('spendAcctDrop')?.classList.remove('show');
-        const sel = getChecked();
-        const lbl = document.getElementById('spendAcctLabel');
-        if (lbl) lbl.textContent = (sel.length === 0 || sel.length >= totalAccts) ? 'All Accounts' : sel.length + (sel.length === 1 ? ' Account' : ' Accounts');
-        loadSpending();
-      };
-
-      render(initData['month'] || []);
+      window.initSpendingWidget = initSpendingWidget;
+      initSpendingWidget(document.currentScript.previousElementSibling);
     })();
     </script>
           <?php break;
@@ -926,9 +938,10 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
       function _renderPrice(allRows) {
         const body = document.getElementById('topMoversPriceBody');
         if (!body) return;
-        const rows = allRows.filter(r => r.chg_pct !== null)
+        // Only securities currently held: sold and watchlist-only symbols are left out
+        const rows = allRows.filter(r => r.qty > 0.000001 && r.chg_pct !== null)
           .sort((a,b) => Math.abs(b.chg_pct)-Math.abs(a.chg_pct)).slice(0,10);
-        if (!rows.length) { body.innerHTML='<p class="text-muted small">No price change data available.</p>'; return; }
+        if (!rows.length) { body.innerHTML='<p class="text-muted small">No owned holdings with price change data.</p>'; return; }
         let h = '<table class="table table-sm dash-table"><thead><tr>'
           +'<th>Symbol</th><th class="text-end">Price</th>'
           +'<th class="text-end sortable" onclick="sortDashTable(this)">Chg <i class="bi bi-dash sort-caret"></i></th>'
@@ -2062,10 +2075,21 @@ function maximizeWidget(btn) {
 
   const clone = body.cloneNode(true);
 
-  // Convert any live canvases to static images so charts are visible in the modal
+  // cloneNode copies attributes, not live form state: carry over current
+  // select values and checkbox states.
+  const srcFields   = body.querySelectorAll('select, input');
+  const cloneFields = clone.querySelectorAll('select, input');
+  srcFields.forEach((f, i) => {
+    if (f.type === 'checkbox' || f.type === 'radio') cloneFields[i].checked = f.checked;
+    else cloneFields[i].value = f.value;
+  });
+
+  // Convert any live canvases to static images so charts are visible in the modal.
+  // Widgets marked data-live-widget re-initialize on the copy and keep their canvases.
   const srcCanvases   = body.querySelectorAll('canvas');
   const cloneCanvases = clone.querySelectorAll('canvas');
   srcCanvases.forEach((cv, i) => {
+    if (cv.closest('[data-live-widget]')) return;
     try {
       const img = document.createElement('img');
       img.src   = cv.toDataURL('image/png');
@@ -2078,6 +2102,11 @@ function maximizeWidget(btn) {
   const modalBody = document.getElementById('widgetMaxModalBody');
   modalBody.innerHTML = '';
   modalBody.appendChild(clone);
+
+  const srcSpend = body.querySelector('[data-live-widget="spending"]');
+  if (srcSpend && window.initSpendingWidget) {
+    initSpendingWidget(clone.querySelector('[data-live-widget="spending"]'), srcSpend._spState);
+  }
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('widgetMaxModal')).show();
 }
