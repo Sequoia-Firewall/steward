@@ -41,11 +41,7 @@ $stmt = $db->prepare(
             WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
             WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
             ELSE 0
-        END), 0) AS net_qty,
-        SUM(CASE WHEN it.activity IN ('buy','add','reinvest_div','reinvest_cap')
-            THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost,
-        SUM(CASE WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap')
-            THEN it.quantity ELSE 0 END) AS buy_qty
+        END), 0) AS net_qty
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
      JOIN investments   i ON i.id = it.investment_id
@@ -59,6 +55,8 @@ $stmt->execute($acctParams);
 $rawRows = $stmt->fetchAll();
 
 $latestPrices = getLatestInvestmentPrices();
+$txnPrices    = getTransactionPriceHistory();
+$positions    = getInvestmentLots()['positions'];
 
 // ── Aggregate ─────────────────────────────────────────────────
 $byType    = [];
@@ -68,11 +66,9 @@ $totalMV   = 0.0;
 foreach ($rawRows as $r) {
     $invId   = (int)$r['inv_id'];
     $qty     = (float)$r['net_qty'];
-    $buyQty  = (float)$r['buy_qty'];
-    $buyCost = (float)$r['buy_cost'];
-    $avgCost = $buyQty > 0 ? $buyCost / $buyQty : 0.0;
-    $price   = $latestPrices[$invId]['price'] ?? null;
-    $mv      = $price !== null ? $price * $qty : $avgCost * $qty;
+    // Latest market price, else the last transaction price, else the FIFO cost of the shares held
+    $price   = $latestPrices[$invId]['price'] ?? (!empty($txnPrices[$invId]) ? end($txnPrices[$invId])[1] : null);
+    $mv      = $price !== null ? $price * $qty : ($positions[$invId . ':' . (int)$r['acct_id']]['cost'] ?? 0.0);
 
     $type    = $r['inv_type']  ?: 'Other';
     $account = $r['acct_name'] ?: 'Unknown';

@@ -327,6 +327,8 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
   <?php endif; ?>
 </div>
 
+<?php include __DIR__ . '/../includes/realized_sales_section.php'; ?>
+
 <!-- Price History Section -->
 <div class="dash-section">
   <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">

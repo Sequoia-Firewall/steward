@@ -56,9 +56,6 @@ $stmt->execute($acctParams);
 $allTxns = $stmt->fetchAll();
 
 // ── Current-holdings table ─────────────────────────────────────
-$holdWhere  = "a.is_investment_cash = 0 AND i.is_active = 1";
-$holdParams = [];
-if ($acctFilter) { $holdWhere .= " AND a.id = ?"; $holdParams[] = $acctFilter; }
 
 $stmt2 = $db->prepare(
     "SELECT
@@ -109,7 +106,6 @@ if (!empty($allTxns)) {
 
     // Walk through transactions in one pass per snapshot
     $sharesHeld   = [];
-    $cumCostBasis = 0.0;
     $txnIdx       = 0;
     $txnCount     = count($allTxns);
 
@@ -122,7 +118,6 @@ if (!empty($allTxns)) {
             if (!isset($sharesHeld[$k])) $sharesHeld[$k] = 0.0;
             if (in_array($act, ['buy', 'add', 'reinvest_div', 'reinvest_cap'])) {
                 $sharesHeld[$k] += $qty;
-                $cumCostBasis   += $qty * (float)$t['price'] + (float)$t['commission'];
             } elseif (in_array($act, ['sell', 'remove'])) {
                 $sharesHeld[$k] -= $qty;
             } elseif ($act === 'split') {
@@ -139,36 +134,56 @@ if (!empty($allTxns)) {
             if ($p !== null) $mv += $shares * $p;
         }
 
+        // Cost basis of the shares still held (FIFO open lots) at this month end
+        $openCost = 0.0;
+        foreach (getInvestmentLots($snapDate)['positions'] as $pos) {
+            if ($filteringAccts && !in_array($pos['account_id'], $selectedAcctIds, true)) continue;
+            $openCost += $pos['cost'];
+        }
+
         $chartLabels[] = date('M Y', strtotime($snapDate));
         $chartMV[]     = round($mv, 2);
-        $chartCost[]   = round($cumCostBasis, 2);
+        $chartCost[]   = round($openCost, 2);
     }
 }
 
 // ── Holdings table rows ────────────────────────────────────────
 $latestPrices    = _addTransactionPriceFallback(getLatestInvestmentPrices(), null, date('Y-m-d'));
-// Chronological per-account replay — correctly re-bases cost basis after each
-// sale, unlike a lifetime SUM($ bought)/SUM(shares bought) average. (The "Amount
-// Invested" chart line above is a separate, intentionally cumulative metric and
-// is not affected by this.)
-$costBases       = getInvestmentCostBasesByAccount();
+// FIFO open lots per holding: cost basis, and the cost-weighted age of the lots
+// still held, which is what each holding is annualized over (a position built up
+// over years shouldn't be annualized from its very first purchase).
+$positions       = getInvestmentLots()['positions'];
 $today           = date('Y-m-d');
 $tableRows       = [];
 $totalCostBasis  = 0.0;
 $totalCurrentVal = 0.0;
+$allLotDays      = 0.0; // Σ cost × days held, across every open lot in the table
+$allLotWeight    = 0.0;
 
 foreach ($holdingRows as $r) {
     $invId     = (int)$r['inv_id'];
     $acctId    = (int)$r['acct_id'];
     $qty       = (float)$r['net_qty'];
-    $cb        = $costBases["$invId:$acctId"] ?? ['buy_cost' => 0.0];
-    $costBasis = $cb['buy_cost'];
+    $lots      = $positions["$invId:$acctId"]['lots'] ?? [];
+    $costBasis = $positions["$invId:$acctId"]['cost'] ?? 0.0;
+    $heldSince = $lots ? min(array_column($lots, 'acquired')) : $r['first_date'];
+
+    // Weight by cost; fall back to shares when the lots carry no cost
+    $useCost = $costBasis > 0.005;
+    $wDays = 0.0; $wSum = 0.0;
+    foreach ($lots as $l) {
+        $w      = $useCost ? $l['cost'] : $l['qty'];
+        $wDays += $w * max(0, (strtotime($today) - strtotime($l['acquired'])) / 86400);
+        $wSum  += $w;
+    }
+    $avgDays = $wSum > 0 ? $wDays / $wSum : (strtotime($today) - strtotime($heldSince)) / 86400;
+    if ($useCost) { $allLotDays += $wDays; $allLotWeight += $wSum; }
 
     $price      = $latestPrices[$invId]['price'] ?? null;
     $currentVal = $price !== null ? $price * $qty : null;
     $gainLoss   = $currentVal !== null ? $currentVal - $costBasis : null;
 
-    $daysHeld  = max(1, (int)((strtotime($today) - strtotime($r['first_date'])) / 86400));
+    $daysHeld  = max(1, (int)round($avgDays));
     $yearsHeld = $daysHeld / 365.25;
 
     $annualReturn = null;
@@ -184,7 +199,7 @@ foreach ($holdingRows as $r) {
         'symbol'      => $r['symbol'],
         'inv_type'    => $r['inv_type'],
         'acct_name'   => $r['acct_name'],
-        'first_date'  => $r['first_date'],
+        'held_since'  => $heldSince,
         'days_held'   => $daysHeld,
         'costBasis'   => $costBasis,
         'currentVal'  => $currentVal,
@@ -196,11 +211,10 @@ foreach ($holdingRows as $r) {
 $totalGainLoss = $totalCurrentVal - $totalCostBasis;
 $totalReturn   = $totalCostBasis > 0 ? ($totalGainLoss / $totalCostBasis) * 100 : null;
 
-// Overall annualized return from first-ever purchase to today
+// Overall annualized return over the cost-weighted age of every open lot
 $overallAnnual = null;
-if (!empty($holdingRows) && $totalCurrentVal > 0 && $totalCostBasis > 0) {
-    $overallFirst  = min(array_column($holdingRows, 'first_date'));
-    $overallYears  = max(1 / 365, (strtotime($today) - strtotime($overallFirst)) / 86400 / 365.25);
+if (!empty($holdingRows) && $totalCurrentVal > 0 && $totalCostBasis > 0 && $allLotWeight > 0) {
+    $overallYears  = max(1 / 365, $allLotDays / $allLotWeight / 365.25);
     $overallAnnual = (pow($totalCurrentVal / $totalCostBasis, 1.0 / $overallYears) - 1) * 100;
 }
 
@@ -213,7 +227,7 @@ if (($_GET['export'] ?? '') === 'csv') {
             $r['symbol'],
             $r['inv_type'],
             $r['acct_name'],
-            $r['first_date'],
+            $r['held_since'],
             $r['days_held'],
             number_format($r['costBasis'],  2, '.', ''),
             $r['currentVal']   !== null ? number_format($r['currentVal'],   2, '.', '') : '',
@@ -223,7 +237,7 @@ if (($_GET['export'] ?? '') === 'csv') {
     }
     outputCsv(
         'portfolio_value_history_' . date('Y-m-d') . '.csv',
-        ['Security','Symbol','Type','Account','First Purchase','Days Held',
+        ['Security','Symbol','Type','Account','Held Since','Avg Days Held',
          'Cost Basis','Current Value','Gain/Loss','Ann. Return %'],
         $csvRows
     );
@@ -264,7 +278,7 @@ include __DIR__ . '/../includes/header.php';
     <div class="tile-value"><?= formatMoney($totalCurrentVal) ?></div>
   </div>
   <div class="report-tile">
-    <div class="tile-label">Amount Invested</div>
+    <div class="tile-label">Cost Basis</div>
     <div class="tile-value"><?= formatMoney($totalCostBasis) ?></div>
   </div>
   <div class="report-tile <?= $totalGainLoss >= 0 ? 'tile-positive' : 'tile-negative' ?>">
@@ -303,8 +317,8 @@ include __DIR__ . '/../includes/header.php';
     <tr>
       <th class="sortable" data-col="security">Security <i class="bi bi-arrow-down-up sort-icon"></i></th>
       <th class="sortable" data-col="account">Account <i class="bi bi-arrow-down-up sort-icon"></i></th>
-      <th class="sortable" data-col="firstdate">First Purchase <i class="bi bi-arrow-down-up sort-icon"></i></th>
-      <th class="text-end sortable" data-col="daysheld">Days Held <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="sortable" data-col="firstdate" title="Acquisition date of the oldest shares still held">Held Since <i class="bi bi-arrow-down-up sort-icon"></i></th>
+      <th class="text-end sortable" data-col="daysheld" title="Cost-weighted average age of the shares still held; Ann. Return is annualized over this">Avg Days Held <i class="bi bi-arrow-down-up sort-icon"></i></th>
       <th class="text-end sortable" data-col="costbasis">Cost Basis <i class="bi bi-arrow-down-up sort-icon"></i></th>
       <th class="text-end sortable" data-col="currentval">Current Value <i class="bi bi-arrow-down-up sort-icon"></i></th>
       <th class="text-end sortable" data-col="gainloss">Gain / Loss <i class="bi bi-arrow-down-up sort-icon"></i></th>
@@ -318,7 +332,7 @@ include __DIR__ . '/../includes/header.php';
     ?>
     <tr data-security="<?= h(strtolower($r['inv_name'])) ?>"
         data-account="<?= h(strtolower($r['acct_name'])) ?>"
-        data-firstdate="<?= h($r['first_date']) ?>"
+        data-firstdate="<?= h($r['held_since']) ?>"
         data-daysheld="<?= $r['days_held'] ?>"
         data-costbasis="<?= $r['costBasis'] ?>"
         data-currentval="<?= $r['currentVal'] ?? '' ?>"
@@ -331,7 +345,7 @@ include __DIR__ . '/../includes/header.php';
         <?php endif; ?>
       </td>
       <td class="text-muted small"><?= h($r['acct_name']) ?></td>
-      <td class="text-muted small"><?= formatDate($r['first_date']) ?></td>
+      <td class="text-muted small"><?= formatDate($r['held_since']) ?></td>
       <td class="text-end text-muted"><?= number_format($r['days_held']) ?></td>
       <td class="text-end"><?= formatMoney($r['costBasis']) ?></td>
       <td class="text-end">
@@ -400,7 +414,7 @@ include __DIR__ . '/../includes/header.php';
           tension: 0.3,
         },
         {
-          label: 'Amount Invested',
+          label: 'Cost Basis',
           data: costData,
           borderColor: '#6c757d',
           backgroundColor: 'transparent',

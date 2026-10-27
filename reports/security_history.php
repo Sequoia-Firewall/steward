@@ -467,6 +467,8 @@ const PRICE_HISTORY = <?= json_encode($priceHistory) ?>;
   <?php endif; ?>
 </div>
 
+<?php include __DIR__ . '/../includes/realized_sales_section.php'; ?>
+
 <!-- Transaction History -->
 <div class="dash-section">
   <div class="d-flex align-items-center justify-content-between mb-2">

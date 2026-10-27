@@ -577,10 +577,7 @@ function getInvestmentAccountMarketValues(): array {
                     WHEN it.activity IN (\'buy\',\'add\',\'split\',\'reinvest_div\',\'reinvest_cap\') THEN  it.quantity
                     WHEN it.activity IN (\'sell\',\'remove\')                                        THEN -it.quantity
                     ELSE 0
-                END) AS net_qty,
-                SUM(CASE WHEN it.activity IN (\'buy\',\'add\',\'reinvest_div\',\'reinvest_cap\') THEN it.quantity * it.price ELSE 0 END) /
-                NULLIF(SUM(CASE WHEN it.activity IN (\'buy\',\'add\',\'reinvest_div\',\'reinvest_cap\') THEN it.quantity ELSE 0 END), 0)
-                    AS avg_cost_price
+                END) AS net_qty
          FROM investment_transactions it
          JOIN transactions t ON t.id = it.transaction_id
          JOIN accounts a     ON a.id = t.account_id
@@ -592,6 +589,7 @@ function getInvestmentAccountMarketValues(): array {
 
     $latestPrices = getLatestInvestmentPrices();
     $txnPrices    = getTransactionPriceHistory();
+    $positions    = getInvestmentLots()['positions'];
 
     $values = [];
     foreach ($rows as $row) {
@@ -603,10 +601,12 @@ function getInvestmentAccountMarketValues(): array {
         if (!isset($values[$accountId])) $values[$accountId] = 0.0;
         if ($qty > 0.000001) {
             // Latest market price; for a fund with no market price yet, its last
-            // transaction price; average cost only if it has neither.
+            // transaction price; the FIFO cost of the shares held only if it has neither.
             $lastTxn = !empty($txnPrices[$investmentId]) ? end($txnPrices[$investmentId])[1] : null;
-            $price   = $latestPrices[$investmentId]['price'] ?? $lastTxn ?? (float)($row['avg_cost_price'] ?? 0);
-            $values[$accountId] += $price * $qty;
+            $price   = $latestPrices[$investmentId]['price'] ?? $lastTxn;
+            $values[$accountId] += $price !== null
+                ? $price * $qty
+                : ($positions[$investmentId . ':' . $accountId]['cost'] ?? 0.0);
         }
     }
     return $cache = $values;
@@ -979,89 +979,199 @@ function _addTransactionPriceFallback(array $prices, ?array $ids, string $asOf):
     return $prices;
 }
 
-// Chronological per-account cost-basis replay: walks each (investment, account)'s
-// transactions in date order and re-bases cost basis proportionally on every sale
-// (removes avg-cost-per-share-at-that-time × shares sold), instead of a lifetime
-// SUM($ bought)/SUM(shares bought) average. This matters whenever a position is
-// sold down and later repurchased at a different price — a naive average blends
-// in the cost of shares no longer held. $asOf limits the replay to transactions
-// on or before that date, for historical/point-in-time callers.
+// Per-account cost-basis pools from the FIFO lot engine (getInvestmentLots()):
+// "invId:acctId" => ['investment_id', 'account_id', 'qty', 'cost'] for the open
+// lots as of $asOf (null = all transactions). Holdings, Portfolio, Cost & Profit
+// and the other cost-basis helpers all go through this, so they all use FIFO.
 //
 // $saleBasisOut, if passed an array variable by reference, is filled with the
-// avg cost/share at the moment of each sell/remove, keyed by that
-// investment_transactions.id — the single source of truth for "what was this
-// sale's cost basis", shared by every report that needs a per-sale figure
-// (e.g. Capital Gains) instead of each one re-implementing this replay.
+// FIFO cost per share of each sell/remove (basis of the lots it consumed ÷ shares),
+// keyed by investment_transactions.id — callers multiply by the shares sold.
 function _investmentCostBasisPools(?string $asOf = null, ?array &$saleBasisOut = null): array {
-    $saleBasis = [];
-    $where  = ['a.is_investment_cash = 0'];
-    $params = [];
-    if ($asOf !== null) { $where[] = 't.transaction_date <= ?'; $params[] = $asOf; }
+    $L = getInvestmentLots($asOf);
+    $saleBasisOut = [];
+    foreach ($L['sales'] as $id => $sale) {
+        $saleBasisOut[$id] = $sale['qty'] > 0.0000001 ? $sale['basis'] / $sale['qty'] : 0.0;
+    }
+    $pools = [];
+    foreach ($L['positions'] as $key => $p) {
+        $pools[$key] = [
+            'investment_id' => $p['investment_id'],
+            'account_id'    => $p['account_id'],
+            'qty'           => $p['qty'],
+            'cost'          => $p['cost'],
+        ];
+    }
+    return $pools;
+}
 
-    try {
-        $stmt = getDB()->prepare(
-            'SELECT it.id AS it_id, it.investment_id, t.account_id, t.transaction_date, it.activity,
-                    it.quantity, it.price, it.commission
-             FROM investment_transactions it
-             JOIN transactions t ON t.id = it.transaction_id
-             JOIN accounts a     ON a.id = t.account_id
-             WHERE ' . implode(' AND ', $where) . '
-             ORDER BY it.investment_id, t.account_id, t.transaction_date, it.id'
-        );
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll();
-    } catch (Exception $e) {
-        $saleBasisOut = [];
-        return [];
+// ── FIFO tax lots ─────────────────────────────────────────────
+
+// True when shares acquired on $acquired and disposed of on $sold were held more
+// than one year (long-term). The one-year mark is the same month/day a year later,
+// clamped to the month's length, so a Feb 29 purchase turns long-term after Feb 28.
+function isLongTermHolding(string $acquired, string $sold): bool {
+    [$y, $m, $d] = array_map('intval', explode('-', $acquired));
+    $dim = (int)date('t', mktime(0, 0, 0, $m, 1, $y + 1));
+    return $sold > sprintf('%04d-%02d-%02d', $y + 1, $m, min($d, $dim));
+}
+
+// FIFO replay of every investment transaction (investment accounts only, not cash
+// sub-accounts), per security per account, through $asOf (null = all). Returns:
+//   'positions' => ["invId:acctId" => ['investment_id', 'account_id', 'qty', 'cost',
+//                    'lots' => [['acquired', 'qty', 'cost', 'it_id'], ...]]]
+//     Open lots, oldest acquisition first. A transfer-in (Add) with an
+//     acquired_date takes its place by that date, keeping its holding period.
+//   'sales' => [it_id => ['it_id', 'investment_id', 'account_id', 'date', 'activity',
+//                'action_type', 'qty', 'price', 'commission', 'proceeds', 'basis',
+//                'qty_short', 'basis_short', 'qty_long', 'basis_long',
+//                'lots' => [['acquired', 'qty', 'cost', 'long_term'], ...]]]
+//     Every sell and remove, with the lots it consumed (oldest first). Shares sold
+//     beyond what was held carry no basis and count as short-term.
+// Rules: buy/reinvest/priced add open a lot at qty × price (+ commission); an
+// unpriced add (holdings reconciliation) opens one at the current average cost of
+// the open lots, so it doesn't change the cost of shares already held; a split
+// adds shares to every open lot in proportion, keeping each lot's date and cost.
+// Memoized per request by $asOf.
+function getInvestmentLots(?string $asOf = null): array {
+    static $cache = [];
+    static $rows  = null;
+    $ck = $asOf ?? '';
+    if (isset($cache[$ck])) return $cache[$ck];
+
+    // All transactions are fetched once per request; each $asOf replays up to its date
+    if ($rows === null) {
+        try {
+            $rows = getDB()->query(
+                'SELECT it.id AS it_id, it.investment_id, t.account_id, t.transaction_date, it.activity,
+                        it.action_type, it.quantity, it.price, it.commission, it.acquired_date
+                 FROM investment_transactions it
+                 JOIN transactions t ON t.id = it.transaction_id
+                 JOIN accounts a     ON a.id = t.account_id
+                 WHERE a.is_investment_cash = 0 AND it.investment_id IS NOT NULL
+                 ORDER BY t.transaction_date, it.id'
+            )->fetchAll();
+        } catch (Exception $e) {
+            $rows = [];
+        }
     }
 
-    $pools = []; // "invId:acctId" -> ['investment_id'=>,'account_id'=>,'qty'=>,'cost'=>]
+    $eps = 0.0000001;
+    $pos = []; $sales = [];
     foreach ($rows as $r) {
+        if ($asOf !== null && $r['transaction_date'] > $asOf) break;
         $key = $r['investment_id'] . ':' . $r['account_id'];
-        if (!isset($pools[$key])) {
-            $pools[$key] = [
-                'investment_id' => (int)$r['investment_id'],
-                'account_id'    => (int)$r['account_id'],
-                'qty'           => 0.0,
-                'cost'          => 0.0,
-            ];
+        if (!isset($pos[$key])) {
+            $pos[$key] = ['investment_id' => (int)$r['investment_id'], 'account_id' => (int)$r['account_id'],
+                          'qty' => 0.0, 'cost' => 0.0, 'lots' => []];
         }
+        $P     = &$pos[$key];
         $qty   = (float)$r['quantity'];
         $price = (float)$r['price'];
+        $comm  = (float)$r['commission'];
+        $date  = $r['transaction_date'];
+
         switch ($r['activity']) {
-            case 'add':
-                if ($price <= 0.0) {
-                    // A zero-price 'add' (holdings-reconciliation ShrsIn) enters at the
-                    // current average cost, mirroring how a zero-price 'remove' below
-                    // always exits at average cost — otherwise it would dilute the avg
-                    // cost/share for every share already held, not just the new ones.
-                    $avgCost = $pools[$key]['qty'] > 0.000001 ? $pools[$key]['cost'] / $pools[$key]['qty'] : 0.0;
-                    $pools[$key]['cost'] += $avgCost * $qty;
-                    $pools[$key]['qty']  += $qty;
-                    break;
+            case 'buy': case 'reinvest_div': case 'reinvest_cap': case 'add':
+                if ($qty <= $eps) break;
+                if ($r['activity'] === 'add' && $price <= 0.0) {
+                    $cost = $P['qty'] > $eps ? $P['cost'] / $P['qty'] * $qty : 0.0;
+                } else {
+                    $cost = $qty * $price + $comm;
                 }
-                // fall through — a priced 'add' behaves like a buy
-            case 'buy': case 'reinvest_div': case 'reinvest_cap':
-                $pools[$key]['qty']  += $qty;
-                $pools[$key]['cost'] += $qty * $price + (float)$r['commission'];
+                $acq = ($r['activity'] === 'add' && !empty($r['acquired_date'])) ? $r['acquired_date'] : $date;
+                $lot = ['acquired' => $acq, 'qty' => $qty, 'cost' => $cost, 'it_id' => (int)$r['it_id']];
+                // Insert by acquisition date (after any lots with the same date)
+                $i = count($P['lots']);
+                while ($i > 0 && $P['lots'][$i - 1]['acquired'] > $acq) $i--;
+                array_splice($P['lots'], $i, 0, [$lot]);
+                $P['qty']  += $qty;
+                $P['cost'] += $cost;
                 break;
+
             case 'split':
-                $pools[$key]['qty'] += $qty; // shares added, no cost — lowers avg cost/share
-                break;
-            case 'sell': case 'remove':
-                $avgCost = 0.0;
-                if ($pools[$key]['qty'] > 0.000001) {
-                    $avgCost = $pools[$key]['cost'] / $pools[$key]['qty'];
-                    $pools[$key]['cost'] -= $avgCost * $qty;
+                if ($qty <= $eps) break;
+                if ($P['qty'] > $eps) {
+                    $ratio = ($P['qty'] + $qty) / $P['qty'];
+                    foreach ($P['lots'] as &$l) $l['qty'] *= $ratio;
+                    unset($l);
+                } else {
+                    $P['lots'][] = ['acquired' => $date, 'qty' => $qty, 'cost' => 0.0, 'it_id' => (int)$r['it_id']];
                 }
-                $saleBasis[(int)$r['it_id']] = $avgCost;
-                $pools[$key]['qty'] -= $qty;
+                $P['qty'] += $qty;
+                break;
+
+            case 'sell': case 'remove':
+                $left = $qty; $used = [];
+                $sale = ['qty_short' => 0.0, 'basis_short' => 0.0, 'qty_long' => 0.0, 'basis_long' => 0.0];
+                while ($left > $eps && !empty($P['lots'])) {
+                    $l    = &$P['lots'][0];
+                    $take = min($left, $l['qty']);
+                    $part = $l['qty'] > $eps ? $l['cost'] * $take / $l['qty'] : 0.0;
+                    $long = isLongTermHolding($l['acquired'], $date);
+                    $used[] = ['acquired' => $l['acquired'], 'qty' => $take, 'cost' => $part, 'long_term' => $long];
+                    $sale[$long ? 'qty_long' : 'qty_short']     += $take;
+                    $sale[$long ? 'basis_long' : 'basis_short'] += $part;
+                    $l['qty']  -= $take;
+                    $l['cost'] -= $part;
+                    $left      -= $take;
+                    $P['qty']  -= $take;
+                    $P['cost'] -= $part;
+                    if ($l['qty'] <= $eps) array_shift($P['lots']);
+                    unset($l);
+                }
+                if ($left > $eps) {
+                    // Sold more than was held: no basis for the excess
+                    $used[] = ['acquired' => null, 'qty' => $left, 'cost' => 0.0, 'long_term' => false];
+                    $sale['qty_short'] += $left;
+                    $P['qty'] -= $left;
+                }
+                if (abs($P['qty']) <= $eps) { $P['qty'] = 0.0; $P['cost'] = 0.0; }
+                $sales[(int)$r['it_id']] = [
+                    'it_id'         => (int)$r['it_id'],
+                    'investment_id' => (int)$r['investment_id'],
+                    'account_id'    => (int)$r['account_id'],
+                    'date'          => $date,
+                    'activity'      => $r['activity'],
+                    'action_type'   => $r['action_type'],
+                    'qty'           => $qty,
+                    'price'         => $price,
+                    'commission'    => $comm,
+                    'proceeds'      => $r['activity'] === 'sell' ? $qty * $price - $comm : 0.0,
+                    'basis'         => $sale['basis_short'] + $sale['basis_long'],
+                    'lots'          => $used,
+                ] + $sale;
                 break;
             // div/int: income, no share/cost effect
         }
+        unset($P);
     }
-    $saleBasisOut = $saleBasis;
-    return $pools;
+    return $cache[$ck] = ['positions' => $pos, 'sales' => $sales];
+}
+
+// Realized sales, FIFO-matched: real disposals only — every sell, plus a remove
+// that is a security expiring worthless (action_type 'Expire'). Other removes are
+// holdings reconciliations or transfers out, not sales. One flat list, oldest
+// first, each entry as in getInvestmentLots()['sales'] plus 'gain' (proceeds −
+// basis) and per-term 'proceeds_short'/'proceeds_long'/'gain_short'/'gain_long'
+// (proceeds split by share count). Shared by Capital Gains, Cost & Profit Analysis
+// and the security pages' Realized Sales section.
+function getRealizedSales(): array {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    $out = [];
+    foreach (getInvestmentLots()['sales'] as $s) {
+        if ($s['activity'] === 'remove' && $s['action_type'] !== 'Expire') continue;
+        $q = $s['qty'] > 0 ? $s['qty'] : 1.0;
+        $s['proceeds_short'] = $s['proceeds'] * $s['qty_short'] / $q;
+        $s['proceeds_long']  = $s['proceeds'] * $s['qty_long']  / $q;
+        $s['gain_short']     = $s['proceeds_short'] - $s['basis_short'];
+        $s['gain_long']      = $s['proceeds_long']  - $s['basis_long'];
+        $s['gain']           = $s['proceeds'] - $s['basis'];
+        $out[] = $s;
+    }
+    usort($out, fn($a, $b) => [$a['date'], $a['it_id']] <=> [$b['date'], $b['it_id']]);
+    return $cache = $out;
 }
 
 // Sums per-account pools (from _investmentCostBasisPools()) up to one qty/cost
@@ -1218,13 +1328,16 @@ function getInvestmentPerformanceSeries(array $ids, string $fromDate, string $to
 // later buy divides that buy's short-lived gain by a stale, tiny denominator).
 // This averaging is still an approximation, not a true money-weighted/XIRR return.
 // Total Profit also folds in realized gains/losses on any shares sold during the
-// period (avg cost at sale time via _investmentCostBasisPools()'s $saleBasisOut,
-// the same lookup reports/capital_gains.php uses), so a position that was partly
+// period (FIFO basis of each sale via _investmentCostBasisPools()'s $saleBasisOut,
+// the same lots reports/capital_gains.php uses), so a position that was partly
 // or fully traded during the window isn't missing that leg of its profit.
 // $includeExited additionally includes ids that were held at the start of the
 // period but fully sold out by $toDate (qty 0 at both start-of-window replay and
 // end), so a closed-out position's realized profit for the period is still shown
-// instead of the row disappearing entirely. Callers that want a portfolio-wide
+// instead of the row disappearing entirely. With it, Total Return % divides by the
+// capital invested instead — start-of-period cost basis plus the cost of buys and
+// transfers in during the period — because the start/end average collapses toward
+// zero for a position sold out during the period. Callers that want a portfolio-wide
 // table scoped to current holdings (e.g. reports/investment_performance.php)
 // should leave this false.
 function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $toDate, bool $includeExited = false): array {
@@ -1283,10 +1396,10 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
 
     // Realized gains/losses on shares sold during the period. periodGainLoss
     // (below) only tracks the *unrealized* G/L delta, which goes silent on a
-    // sale — the avg cost removed from the pool cancels out with no record of
-    // what the shares actually sold for. $avgCostAtSale (from the aggEnd
-    // replay above) is the same per-sale cost-basis lookup capital_gains.php
-    // uses, so this stays consistent with that report.
+    // sale — the lot cost removed from the position cancels out with no record of
+    // what the shares actually sold for. $avgCostAtSale (FIFO cost per share of
+    // each sale, from the aggEnd replay above) is the same per-sale lookup
+    // capital_gains.php uses, so this stays consistent with that report.
     $salesStmt = $db->prepare(
         "SELECT it.id AS it_id, it.investment_id, t.transaction_date,
                 it.quantity, it.price, it.commission
@@ -1331,6 +1444,23 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
         ];
     }
 
+    // Capital put in during the period: cost of buys and transfers in (priced adds)
+    $investedByInv = array_fill_keys($processIds, 0.0);
+    if ($includeExited) {
+        $invStmt = $db->prepare(
+            "SELECT it.investment_id, SUM(it.quantity * it.price + it.commission) AS invested
+             FROM investment_transactions it
+             JOIN transactions t ON t.id = it.transaction_id
+             JOIN accounts a     ON a.id = t.account_id
+             WHERE a.is_investment_cash = 0 AND it.investment_id IN ($ph)
+               AND (it.activity = 'buy' OR (it.activity = 'add' AND it.price > 0))
+               AND t.transaction_date BETWEEN ? AND ?
+             GROUP BY it.investment_id"
+        );
+        $invStmt->execute(array_merge($processIds, [$fromDate, $toDate]));
+        foreach ($invStmt->fetchAll() as $r) $investedByInv[(int)$r['investment_id']] = (float)$r['invested'];
+    }
+
     $out = [];
     foreach ($processIds as $iid) {
         $qty       = $aggEnd[$iid]['qty'];
@@ -1367,7 +1497,9 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
         $totalProfit = $periodGainLoss !== null
             ? $periodGainLoss + $totalDistributions + $realizedGainLoss : null;
 
-        $returnBase     = ($costBasisStart + $costBasis) / 2;
+        $returnBase     = $includeExited
+            ? $costBasisStart + $investedByInv[$iid]
+            : ($costBasisStart + $costBasis) / 2;
         $totalReturnPct = ($totalProfit !== null && $returnBase > 0.000001)
             ? ($totalProfit / $returnBase) * 100 : null;
 

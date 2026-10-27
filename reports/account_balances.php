@@ -61,11 +61,7 @@ $holdingsStmt = $db->prepare(
             WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
             WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
             ELSE 0
-        END), 0) AS net_qty,
-        SUM(CASE WHEN it.activity IN ('buy','add','reinvest_div','reinvest_cap')
-            THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost,
-        SUM(CASE WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap')
-            THEN it.quantity ELSE 0 END) AS buy_qty
+        END), 0) AS net_qty
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
      JOIN investments   i ON i.id = it.investment_id
@@ -79,8 +75,9 @@ $holdingsStmt->execute([':asOf' => $asOf]);
 
 // ── Prices on or before $asOf ─────────────────────────────────
 // Latest market close, or else the latest transaction price for a security with no
-// market price yet; average cost below is only a last resort.
+// market price yet; the FIFO cost of the shares held below is only a last resort.
 $latestPrices = array_map(fn($p) => $p['price'], getInvestmentPricesAsOf($asOf));
+$positionsAsOf = getInvestmentLots($asOf)['positions'];
 
 // Build market value per account_id
 $acctMarketValue = [];
@@ -88,11 +85,8 @@ foreach ($holdingsStmt->fetchAll() as $h) {
     $acctId  = (int)$h['acct_id'];
     $invId   = (int)$h['inv_id'];
     $qty     = (float)$h['net_qty'];
-    $buyQty  = (float)$h['buy_qty'];
-    $buyCost = (float)$h['buy_cost'];
-    $avgCost = $buyQty > 0 ? $buyCost / $buyQty : 0.0;
     $price   = $latestPrices[$invId] ?? null;
-    $mv      = $price !== null ? $price * $qty : $avgCost * $qty;
+    $mv      = $price !== null ? $price * $qty : ($positionsAsOf[$invId . ':' . $acctId]['cost'] ?? 0.0);
     $acctMarketValue[$acctId] = ($acctMarketValue[$acctId] ?? 0.0) + $mv;
 }
 

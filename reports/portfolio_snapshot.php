@@ -75,11 +75,7 @@ $stmt = $db->prepare(
             WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap') THEN  it.quantity
             WHEN it.activity IN ('sell','remove')                                   THEN -it.quantity
             ELSE 0
-        END), 0) AS net_qty,
-        SUM(CASE WHEN it.activity IN ('buy','add','reinvest_div','reinvest_cap')
-            THEN it.quantity * it.price + it.commission ELSE 0 END) AS buy_cost,
-        SUM(CASE WHEN it.activity IN ('buy','add','split','reinvest_div','reinvest_cap')
-            THEN it.quantity ELSE 0 END) AS buy_qty
+        END), 0) AS net_qty
      FROM investment_transactions it
      JOIN transactions t ON t.id  = it.transaction_id
      JOIN investments   i ON i.id = it.investment_id

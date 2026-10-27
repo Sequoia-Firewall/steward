@@ -888,8 +888,8 @@ pre code {
 
     <ul>
       <li>Each security is listed with symbol, type, current price, total shares, market value, cost basis, and gain/loss.</li>
-      <li>Click any security name to open its <strong>Security Page</strong> — a dedicated page showing a price history chart, cost basis and average cost per share, and a complete transaction history across <em>all</em> accounts. Use the <strong>Export CSV</strong> button on the Security Page to download the full transaction history (Date, Account, Activity, Shares, Price/Share, Commission, Total, Cleared, Memo).</li>
-      <li>The Security Page's <strong>Performance &amp; Cost Analysis</strong> section covers a date range you choose. Total Profit folds in realized gains/losses on any shares sold during that range (shown in their own <strong>Realized G/L</strong> column) alongside the change in unrealized gain/loss and any distributions received. A position fully sold out during the range still gets a row — shares and cost basis show as 0, with its realized profit from the sale(s) called out. Click <strong>Full Report</strong> to open the same security's <a href="#reports">Security History report</a>, which covers its entire lifetime and keeps working after it's no longer held.</li>
+      <li>Click any security name to open its <strong>Security Page</strong> — a dedicated page showing a price history chart, cost basis and average cost per share, a <strong>Realized Sales</strong> section listing every sale with its short- and long-term gain (expand a sale to see the lots it sold, oldest first), and a complete transaction history across <em>all</em> accounts. Use the <strong>Export CSV</strong> button on the Security Page to download the full transaction history (Date, Account, Activity, Shares, Price/Share, Commission, Total, Cleared, Memo).</li>
+      <li>The Security Page's <strong>Performance &amp; Cost Analysis</strong> section covers a date range you choose. Total Profit folds in realized gains/losses on any shares sold during that range (shown in their own <strong>Realized G/L</strong> column) alongside the change in unrealized gain/loss and any distributions received. A position fully sold out during the range still gets a row — shares and cost basis show as 0, with its realized profit from the sale(s) called out. Its Total Return % divides by the capital invested (cost basis at the start of the range plus buys and transfers in during it), so a position sold during the range still shows a meaningful return. Click <strong>Full Report</strong> to open the same security's <a href="#reports">Security History report</a>, which covers its entire lifetime and keeps working after it's no longer held.</li>
       <li>Click <strong>Fetch Prices</strong> to retrieve current quotes from a financial data source. A bulk fetch covers index symbols, watchlisted securities, and anything currently held — sold-off, un-watchlisted securities drop off the list automatically. Fetching a single security from its Price History panel always works regardless of these rules.</li>
       <li>Use <strong>Merge Securities</strong> to combine duplicate security records (e.g. the same ETF imported under slightly different names).</li>
       <li>The <i class="bi bi-eye-slash"></i> button <strong>Deactivate</strong>s a security — this is a soft delete: transactions and price history are kept, the security just drops out of the Portfolio and current-holdings reports (Net Worth still counts any shares you hold). If you still hold shares, a warning shows the share count before you confirm. Recording new activity for a deactivated security, or re-adding it via New Investment with a matching symbol or name, reactivates it automatically instead of creating a duplicate record.</li>
@@ -999,6 +999,16 @@ pre code {
 
     <h3>Investment Reports</h3>
     <div class="note"><i class="bi bi-info-circle-fill"></i>
+      <strong>Cost basis uses FIFO.</strong> Steward tracks each purchase as a tax lot and
+      matches sales to the oldest shares first (first-in, first-out). Holdings, Portfolio,
+      Capital Gains, Cost &amp; Profit Analysis and the other reports all use the same lots.
+      Shares transferred in with an <strong>Originally Acquired</strong> date take their place
+      by that date. A stock split adds shares to every lot without changing its cost or date.
+      These figures are an approximation of your broker's: if you chose specific lots when
+      selling, or your broker adjusted basis (wash sales, return of capital), the numbers will
+      differ. <strong>Your broker's statements and Form 1099-B are the reference for taxes.</strong>
+    </div>
+    <div class="note"><i class="bi bi-info-circle-fill"></i>
       <strong>Securities without a market price.</strong> Some holdings, such as 401(k) trust
       funds and 529 plan options, have no price feed, or one that starts years after you bought
       them. Wherever a value is needed for a date — Net Worth, Account Balances (and its history),
@@ -1012,8 +1022,8 @@ pre code {
       <tr><td>Portfolio Performance</td><td>Unrealized gains, cost basis, and return % for all current holdings.</td></tr>
       <tr><td>Asset Allocation</td><td>Portfolio breakdown by asset type and account with donut charts.</td></tr>
       <tr><td>Portfolio Snapshot</td><td>Top holdings by market value as a donut chart.</td></tr>
-      <tr><td>Capital Gains</td><td>Realized gains and losses from sold securities using the average cost method.</td></tr>
-      <tr><td>Portfolio Value History</td><td>Portfolio value vs. amount invested over time.</td></tr>
+      <tr><td>Capital Gains</td><td>Realized gains and losses from sold securities, matched to the shares sold first-in, first-out (FIFO). Each sale shows when its shares were acquired, how long they were held, and whether the gain is short-term (held one year or less) or long-term (held more than one year), with short- and long-term totals. A sale that includes both short- and long-term shares is split into one row per term, as on Form 8949; shares bought on several dates show <em>Various</em> (hover for the dates). Retirement accounts are left out unless you check <strong>Include Retirement Accounts</strong>. CSV export includes the acquired date, days held and term.</td></tr>
+      <tr><td>Portfolio Value History</td><td>Portfolio value vs. cost basis over time. The cost line is the cost of the shares still held at each month end, so it drops when shares are sold. In the holdings table, <strong>Held Since</strong> is the acquisition date of the oldest shares still held and <strong>Avg Days Held</strong> is their cost-weighted average age; each holding's annualized return is measured over that average age, not from its very first purchase.</td></tr>
       <tr><td>Investment Performance</td><td>Normalized % return chart comparing selected securities and indexes over a chosen date range, with quick date presets and a summary table.</td></tr>
       <tr><td>Stock Exposure</td><td>True effective exposure per stock — combines the market value of direct stock holdings with each stock's weighted share of any ETF or mutual fund positions. Ranks all identified securities by effective dollar exposure. See limitations below.</td></tr>
       <tr><td>Sector Exposure</td><td>GICS sector breakdown of effective stock exposure — the same combined direct + fund-weighted exposure as Stock Exposure, grouped by sector (Information Technology, Financials, Energy, etc.) with a donut chart and per-sector security drill-down. See limitations below.</td></tr>
