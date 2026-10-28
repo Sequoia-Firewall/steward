@@ -6,3 +6,4 @@ notes.txt
 build_package.sh
 feature_spec.md
 feature_plan.md
+dist/
