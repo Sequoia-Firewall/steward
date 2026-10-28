@@ -42,7 +42,7 @@ $month           = (int)date('n');
 $monthlySpend    = getMonthlySpending($year, $month, $acctIdsSpend);
 $monthName       = date('F Y');
 $upcomingBills   = getUpcomingBillsByRange(180);
-$dashboardBudget = getBudgetDashboardItems();
+$dashboardBudget = getBudgetDashboard();
 $favoriteReports = getFavoriteReports();
 $totalSpend      = array_sum(array_column($monthlySpend, 'total'));
 
@@ -603,13 +603,26 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
 
           // ── Budget ─────────────────────────────────────────────
           case 'budget': ?>
-    <?php if (!empty($dashboardBudget)): ?>
+    <?php if (!empty($dashboardBudget['items']) || !empty($dashboardBudget['alerts'])): ?>
+    <?php if (!empty($dashboardBudget['alerts'])): $dbAlerts = $dashboardBudget['alerts']; ?>
+    <div class="dbw-alerts">
+      <?php foreach (array_slice($dbAlerts, 0, 3) as $a): ?>
+      <div class="dbw-alert dbw-alert-<?= $a['alert']['level'] ?>">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span><strong><?= h($a['name']) ?></strong> — <?= h($a['alert']['text']) ?></span>
+      </div>
+      <?php endforeach; ?>
+      <?php if (count($dbAlerts) > 3): ?>
+      <a class="dbw-alert-more" href="<?= BASE_PATH ?>/budget/view?id=<?= $dashboardBudget['budget_id'] ?>"><?= count($dbAlerts) - 3 ?> more alert<?= count($dbAlerts) - 3 === 1 ? '' : 's' ?>…</a>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
     <?php
     $budgetSectionLabels = ['income' => 'Income', 'expense' => 'Expenses', 'transfer' => 'Transfers'];
     $currentSection = null;
     ?>
     <div class="dbw-item-list">
-      <?php foreach ($dashboardBudget as $item):
+      <?php foreach ($dashboardBudget['items'] as $item):
         $barCls = $item['raw_pct'] === null ? 'bar-none'
                 : ($item['raw_pct'] > 100    ? 'bar-over'
                 : ($item['raw_pct'] >= 80    ? 'bar-warn' : 'bar-ok'));
@@ -622,7 +635,7 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
       </div>
       <?php endif; ?>
       <div class="dbw-item">
-        <div class="dbw-item-name"><?= h($item['name']) ?></div>
+        <div class="dbw-item-name"<?= abs($item['carry_in']) >= 0.005 ? ' title="Includes ' . h(formatMoney($item['carry_in'])) . ' rolled over from earlier months"' : '' ?>><?= h($item['name']) ?><?php if ($item['alert']): ?> <i class="bi bi-exclamation-triangle-fill dbw-alert-icon dbw-alert-<?= $item['alert']['level'] ?>" title="<?= h($item['alert']['text']) ?>"></i><?php endif; ?></div>
         <div class="dbw-item-bar">
           <div class="budget-bar-track">
             <div class="budget-bar-fill <?= $barCls ?>" style="width:<?= round($item['pct'] ?? 0, 1) ?>%"></div>

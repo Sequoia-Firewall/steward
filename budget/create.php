@@ -45,6 +45,7 @@ if ($isEdit) {
                 'amount'    => (float)$r['amount'],
                 'months'    => [],
                 'due'       => parseDueMonths($r['due_months']),
+                'rollover'  => (int)$r['rollover'],
                 'dashboard' => (int)$r['show_on_dashboard'],
             ];
         }
@@ -358,6 +359,7 @@ function updateEntryType(sel) {
   row.querySelector('.wiz-cat-amount-wrap').classList.toggle('d-none', isVar);
   row.querySelector('.wiz-cat-variable').classList.toggle('d-none', !isVar);
   row.querySelector('.wiz-due-months')?.classList.toggle('d-none', sel.value !== 'annual');
+  row.querySelector('.wiz-rollover-label')?.classList.toggle('d-none', sel.value === 'annual');
   if (isVar) updateVarTotal(row); else updateEquivHint(row);
 }
 

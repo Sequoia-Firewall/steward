@@ -807,6 +807,7 @@ pre code {
       <li>Add budget lines: pick a category and enter the monthly or annual target amount. The equivalent amount in the other period is shown as a hint.</li>
       <li>For an <em>Annual</em> line, tick the <strong>Due</strong> months when the amount is actually paid (e.g. insurance due in March and September). The annual amount is split evenly across those months for the monthly target and for pacing. With no due months ticked, the line has no monthly target and is paced evenly across the year. Copying a budget keeps the due months.</li>
       <li>For variable categories (irregular spending), choose <em>Variable</em> entry type and enter a per-month amount for each month.</li>
+      <li>Tick <i class="bi bi-arrow-repeat"></i> <strong>Rollover</strong> on a monthly or variable line to treat it as an envelope: what you don't spend carries into the next month, and overspending comes out of later months. Carries run January to December and start fresh each year. Copying a budget keeps the setting.</li>
       <li>Check <i class="bi bi-speedometer2"></i> <strong>Dashboard</strong> on any category line to include it on the dashboard widget (only takes effect if this budget's own dashboard toggle above is on). Turning that toggle on defaults every category currently in the budget to shown-on-dashboard; you can uncheck individual ones afterward.</li>
     </ol>
 
@@ -841,7 +842,7 @@ pre code {
       Open a budget to see each category's progress toward its target, with two bars per row:
     </p>
     <ul>
-      <li><strong>This Month</strong> — actual spending/income so far this month vs. the monthly target.</li>
+      <li><strong>This Month</strong> — actual spending/income so far this month vs. the monthly target. For a <strong>Rollover</strong> line the target includes what carried over from earlier months, shown underneath (e.g. <em>$300 budget + $120 rolled over</em>). Budget vs. Actual always compares with the plain monthly target.</li>
       <li><strong>This Year</strong> — year-to-date actual vs. the full annual budget (all 12 months summed), with a dark <strong>pace marker</strong> at the share of the annual budget the line's schedule expects by now: its monthly targets through the selected month (so an annual line due in September jumps there in September), or an even share of the year for an annual line without due months. Filled portion past the marker means spending is ahead of pace (or, for income, earning is behind pace).</li>
     </ul>
     <p>
@@ -849,6 +850,22 @@ pre code {
       outweigh purchases shows a negative amount rather than $0. A transaction counts toward
       the budget line for its subcategory, or its parent category when only the parent is
       budgeted. <strong>Untracked Activity</strong> lists only what no budget line covers.
+    </p>
+    <h3>Budget Alerts</h3>
+    <p>
+      Expense lines raise an alert, shown in a box at the top of the budget and marked with
+      <i class="bi bi-exclamation-triangle-fill" style="color:#e0a800"></i> on the line, when one of these applies
+      (only the most serious one is shown per line):
+    </p>
+    <ul>
+      <li><strong>Over annual budget</strong> — year-to-date spending is past the annual budget (shown in red).</li>
+      <li><strong>90% used early</strong> — 90% of the annual budget is used while the line's schedule expects less than 75% by now.</li>
+      <li><strong>Over pace</strong> — spending is more than 15% of the annual budget ahead of the schedule.</li>
+      <li><strong>Over this month's budget</strong> — this month's spending is past this month's target (including any rollover). Annual lines have no monthly target, so they never raise this one.</li>
+    </ul>
+    <p>
+      The dashboard Budget widget lists the dashboard budget's top three alerts, for every
+      line in the budget (not only the ones shown on the widget), with a link to the rest.
     </p>
     <p>
       Each row also shows a pace status (<span style="color:var(--green)">On Track</span>,

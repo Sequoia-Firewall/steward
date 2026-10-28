@@ -69,8 +69,8 @@ try {
 
     // Insert categories
     $insCat = $db->prepare(
-        "INSERT INTO budget_categories (budget_id, category_id, entry_type, amount, due_months, show_on_dashboard)
-         VALUES (?,?,?,?,?,?)"
+        "INSERT INTO budget_categories (budget_id, category_id, entry_type, amount, due_months, rollover, show_on_dashboard)
+         VALUES (?,?,?,?,?,?,?)"
     );
     $insMon = $db->prepare(
         "INSERT INTO budget_monthly_amounts (budget_category_id, month, amount) VALUES (?,?,?)"
@@ -85,8 +85,9 @@ try {
         $amount    = $entryType !== 'variable' ? max(0, (float)($data['amount'] ?? 0)) : 0;
         $dashCat   = !empty($data['dashboard']) ? 1 : 0;
         $dueMonths = $entryType === 'annual' ? formatDueMonths($data['due'] ?? []) : null;
+        $rollover  = $entryType !== 'annual' && !empty($data['rollover']) ? 1 : 0;
 
-        $insCat->execute([$budgetId, $catId, $entryType, $amount, $dueMonths, $dashCat]);
+        $insCat->execute([$budgetId, $catId, $entryType, $amount, $dueMonths, $rollover, $dashCat]);
         $bcId = (int)$db->lastInsertId();
 
         if ($entryType === 'variable') {

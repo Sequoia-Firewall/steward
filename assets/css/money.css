@@ -2369,6 +2369,12 @@ th.sortable .bi-sort-down-alt { opacity: 1; color: var(--ms-blue-lt); }
 
 /* ── Dashboard Budget Widget ──────────────────────────────────── */
 .dbw-item-list { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.dbw-alerts { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; font-size: .78rem; }
+.dbw-alert { display: flex; gap: 6px; align-items: baseline; padding: 3px 8px; border-radius: 4px; background: #fff8e6; color: #6b4d00; }
+.dbw-alert-danger { background: #fdecec; color: #8a1c1c; }
+.dbw-alert-more { font-size: .75rem; padding-left: 8px; }
+.dbw-alert-icon.dbw-alert-warning { color: #e0a800; }
+.dbw-alert-icon.dbw-alert-danger  { color: var(--neg-color); }
 .dbw-section-label {
   font-size: .7rem;
   font-weight: 700;
@@ -3763,6 +3769,13 @@ button.tile-header-link { background: transparent; cursor: pointer; line-height:
 }
 
 /* ── Budget View (view.php) ──────────────────────────────────── */
+.bv-alerts { border: 1px solid #f0c36d; border-left: 4px solid #e0a800; background: #fff8e6; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; font-size: .85rem; }
+.bv-alerts-title { font-weight: 700; color: #8a6100; margin-bottom: 4px; }
+.bv-alerts ul { padding-left: 18px; }
+.bv-alerts li.bv-alert-danger strong { color: var(--neg-color); }
+.bv-alert-icon.bv-alert-danger  { color: var(--neg-color); }
+.bv-alert-icon.bv-alert-warning { color: #e0a800; }
+.bv-rollover-note { font-size: .72rem; color: #6c757d; }
 .bv-period-heading {
   font-size: .82rem;
   color: #888;

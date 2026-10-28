@@ -31,6 +31,7 @@ function renderCatRow(array $cat, array $selCats, array $monthNames, bool $isChi
     $amount  = $sel['amount']    ?? 0;
     $months  = $sel['months']    ?? [];
     $due     = $sel['due']       ?? [];
+    $roll    = $sel['rollover']  ?? 0;
     $dash    = $sel['dashboard'] ?? 0;
     $isVar   = $type === 'variable';
     $hist    = $histSpend[$cid] ?? null;
@@ -83,6 +84,11 @@ function renderCatRow(array $cat, array $selCats, array $monthNames, bool $isChi
                <?= in_array($mn, $due, true) ? 'checked' : '' ?> <?= $dis ?>><span><?= h(substr($mLabel, 0, 1)) ?></span></label>
         <?php endforeach; ?>
       </div>
+      <label class="wiz-dash-label wiz-rollover-label <?= $type === 'annual' ? 'd-none' : '' ?>" title="Rollover: unspent budget (or overspending) carries into later months of the same year">
+        <input type="checkbox" class="wiz-rollover-check" name="cats[<?= $cid ?>][rollover]" value="1"
+               <?= $roll ? 'checked' : '' ?> <?= $dis ?>>
+        <i class="bi bi-arrow-repeat"></i> Rollover
+      </label>
       <label class="wiz-dash-label" title="Show this category on the dashboard budget widget">
         <input type="checkbox" class="wiz-dash-check" name="cats[<?= $cid ?>][dashboard]" value="1"
                <?= $dash ? 'checked' : '' ?> <?= $dis ?>>

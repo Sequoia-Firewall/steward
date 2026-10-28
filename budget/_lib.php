@@ -14,6 +14,11 @@
  *   variable — budget_monthly_amounts for each month
  *   annual   — amount split evenly across due_months; with no due months there
  *              is no monthly target and pacing is linear (amount × months / 12)
+ *
+ * Rollover (monthly and variable lines with budget_categories.rollover): the
+ * month's available amount is its target plus what was left over (or minus
+ * what was overspent) in earlier months of the same calendar year. Annual
+ * totals and pacing don't change, since carries net out within the year.
  */
 
 /**
@@ -172,8 +177,10 @@ function budgetScheduledByCategory(array $acctIds, int $year, string $fromDate):
  * Each line: bc_id, category_id, name, display_name, parent_id, parent_name,
  *   cat_type, is_income, entry_type, amount, due_months, rollover,
  *   show_on_dashboard, targets[1..12], actuals[1..12], scheduled[1..12],
- *   projected[1..12], mon_budget, annual_budget, expected_to_date,
- *   mon_actual, ytd_actual, projected_total, metrics (computeBudgetRow()).
+ *   projected[1..12], mon_budget, carry_in, mon_available, annual_budget,
+ *   expected_to_date, mon_actual, ytd_actual, projected_total,
+ *   metrics (computeBudgetRow(), measured against mon_available), alert.
+ * `alerts` lists the lines with an alert, most severe first (budgetLineAlert()).
  */
 function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = []): ?array {
     $db    = getDB();
@@ -307,6 +314,14 @@ function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = [])
             for ($m = $month + 1; $m <= 12; $m++) $proj[$m] += $left / (12 - $month);
         }
 
+        // Envelope rollover: carry earlier months' leftover (or overspend) forward
+        $rolls = (bool)$r['rollover'] && $r['entry_type'] !== 'annual';
+        $carry = 0.0;
+        if ($rolls) {
+            for ($m = 1; $m < $month; $m++) $carry += $targets[$m] - $act[$m];
+            $carry = round($carry, MONEY_DECIMALS);
+        }
+
         $line = [
             'bc_id'             => (int)$r['bc_id'],
             'category_id'       => (int)$r['category_id'],
@@ -319,22 +334,29 @@ function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = [])
             'entry_type'        => $r['entry_type'],
             'amount'            => $amount,
             'due_months'        => $due,
-            'rollover'          => (bool)$r['rollover'],
+            'rollover'          => $rolls,
             'show_on_dashboard' => (bool)$r['show_on_dashboard'],
             'targets'           => $targets,
             'actuals'           => $act,
             'scheduled'         => $sched,
             'projected'         => $proj,
             'mon_budget'        => $targets[$month],
+            'carry_in'          => $carry,
+            'mon_available'     => $targets[$month] + $carry,
             'annual_budget'     => $annual,
             'expected_to_date'  => $expected,
             'mon_actual'        => $act[$month],
             'ytd_actual'        => $ytd,
             'projected_total'   => array_sum($proj),
         ];
-        $line['metrics'] = computeBudgetRow($line, $line['mon_actual'], $ytd, $isIncome);
+        $line['metrics'] = computeBudgetRow(['mon_budget' => $line['mon_available']] + $line, $line['mon_actual'], $ytd, $isIncome);
+        $line['alert']   = budgetLineAlert($line, $month);
         $lines[] = $line;
     }
+
+    $alerts = array_values(array_filter($lines, fn($l) => $l['alert'] !== null));
+    usort($alerts, fn($a, $b) => $a['alert']['rank'] <=> $b['alert']['rank']
+                              ?: $b['alert']['amount'] <=> $a['alert']['amount']);
 
     $income  = array_values(array_filter($lines, fn($l) => $l['is_income']));
     $expense = array_values(array_filter($lines, fn($l) => !$l['is_income']));
@@ -349,6 +371,7 @@ function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = [])
         'income'           => $income,
         'expense'          => $expense,
         'totals'           => ['income' => budgetTotals($income, true), 'expense' => budgetTotals($expense, false)],
+        'alerts'           => $alerts,
         'untracked'        => $withUntracked ? budgetUntrackedRows($untracked, $month) : ['income' => [], 'expense' => []],
         'inv_income'       => $withInvIncome ? budgetInvestmentIncome($acctIds, $year, $month) : [],
     ];
@@ -359,14 +382,54 @@ function budgetTotals(array $lines, bool $isIncome): array {
     $sum = fn(string $k) => array_sum(array_column($lines, $k));
     $t = [
         'mon_budget'       => $sum('mon_budget'),
+        'carry_in'         => $sum('carry_in'),
+        'mon_available'    => $sum('mon_available'),
         'annual_budget'    => $sum('annual_budget'),
         'expected_to_date' => $sum('expected_to_date'),
         'mon_actual'       => $sum('mon_actual'),
         'ytd_actual'       => $sum('ytd_actual'),
         'projected_total'  => $sum('projected_total'),
     ];
-    $t['metrics'] = computeBudgetRow($t, $t['mon_actual'], $t['ytd_actual'], $isIncome);
+    $t['metrics'] = computeBudgetRow(['mon_budget' => $t['mon_available']] + $t, $t['mon_actual'], $t['ytd_actual'], $isIncome);
     return $t;
+}
+
+/**
+ * The most severe alert for an expense line, or null. In order:
+ *   over_annual — YTD spending past the annual budget
+ *   early_90    — 90% of the annual budget used while the line's schedule
+ *                 expects less than 75% by now
+ *   over_pace   — more than 15 points of the annual budget ahead of schedule
+ *   over_month  — this month's spending past this month's available amount
+ *                 (lines with a monthly target or rollover only)
+ * Returns [kind, level (danger|warning), rank, text, amount] where amount
+ * (the overspend or % used) orders alerts of the same kind.
+ */
+function budgetLineAlert(array $l, int $month): ?array {
+    if ($l['is_income']) return null;
+    $m       = $l['metrics'];
+    $annual  = $l['annual_budget'];
+    $monName = date('F', mktime(0, 0, 0, $month, 1));
+    if ($annual > 0 && $l['ytd_actual'] > $annual + 0.005) {
+        $over = $l['ytd_actual'] - $annual;
+        return ['kind' => 'over_annual', 'level' => 'danger', 'rank' => 1, 'amount' => $over,
+                'text' => 'Over annual budget by ' . formatMoney($over)];
+    }
+    if ($annual > 0 && $m['pctAnnualUsed'] >= 90 && $m['pctExpected'] < 75) {
+        return ['kind' => 'early_90', 'level' => 'warning', 'rank' => 2, 'amount' => $m['pctAnnualUsed'],
+                'text' => round($m['pctAnnualUsed']) . '% of annual budget used by ' . $monName];
+    }
+    if ($m['paceLabel'] === 'Over Pace') {
+        return ['kind' => 'over_pace', 'level' => 'warning', 'rank' => 3, 'amount' => $m['paceDiff'],
+                'text' => 'Over pace: ' . round($m['pctAnnualUsed']) . '% used, ' . round($m['pctExpected']) . '% expected by now'];
+    }
+    // Only lines with a monthly target (or a rollover envelope) can be over for the month
+    if (($l['mon_budget'] > 0 || $l['rollover']) && $l['mon_actual'] > $l['mon_available'] + 0.005) {
+        $over = $l['mon_actual'] - $l['mon_available'];
+        return ['kind' => 'over_month', 'level' => 'warning', 'rank' => 4, 'amount' => $over,
+                'text' => 'Over ' . $monName . ' budget by ' . formatMoney($over)];
+    }
+    return null;
 }
 
 /** Untracked splits as display rows split by category type, signed in each type's direction. */

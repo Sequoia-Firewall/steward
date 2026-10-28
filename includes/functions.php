@@ -456,20 +456,22 @@ function getMonthlySpending(int $year, int $month, array $accountIds = []): arra
 
 // ── Budget ─────────────────────────────────────────────────────
 
-// Lines of the dashboard budget marked for the widget, with this month's
-// target and signed actual (net refunds come out negative). Math: budget/_lib.php.
-function getBudgetDashboardItems(): array {
+// The dashboard budget for this month (math: budget/_lib.php), or null:
+//   budget_id, items — lines marked for the widget, with this month's available
+//   amount (target plus any rollover) and signed actual — and alerts, every
+//   line of the budget with an alert, most severe first.
+function getBudgetDashboard(): ?array {
     require_once __DIR__ . '/../budget/_lib.php';
     $budget = getDB()->query(
         "SELECT id FROM budgets WHERE show_on_dashboard = 1 AND is_active = 1 ORDER BY id LIMIT 1"
     )->fetch();
-    if (!$budget) return [];
+    if (!$budget) return null;
 
     $model = loadBudgetModel((int)$budget['id'], (int)date('Y'), (int)date('n'), ['with_untracked' => false]);
     $items = [];
     foreach ($model['lines'] as $l) {
         if (!$l['show_on_dashboard']) continue;
-        $budgeted = $l['mon_budget'];
+        $budgeted = $l['mon_available'];
         $actual   = $l['mon_actual'];
         $rawPct   = $budgeted > 0 ? ($actual / $budgeted) * 100 : null;
         $items[] = [
@@ -479,16 +481,18 @@ function getBudgetDashboardItems(): array {
             'category_type' => $l['cat_type'],
             'entry_type'    => $l['entry_type'],
             'budgeted'      => $budgeted,
+            'carry_in'      => $l['carry_in'],
             'actual'        => $actual,
             'remaining'     => $budgeted > 0 ? $budgeted - $actual : null,
             'raw_pct'       => $rawPct,
             'pct'           => $rawPct !== null ? max(0, min($rawPct, 100)) : null,
+            'alert'         => $l['alert'],
         ];
     }
     // Income first, then expenses, each by name (as before)
     usort($items, fn($a, $b) => (($a['category_type'] !== 'income') <=> ($b['category_type'] !== 'income'))
                                  ?: strcasecmp($a['name'], $b['name']));
-    return $items;
+    return ['budget_id' => (int)$budget['id'], 'items' => $items, 'alerts' => $model['alerts']];
 }
 
 // ── Portfolio / Investments ────────────────────────────────────

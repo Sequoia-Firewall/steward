@@ -62,7 +62,8 @@ function csvSectionRows(array $cats, array $tot, string $sectionLabel): array {
         $row = $src['metrics'];
         $rows[] = [
             $sectionLabel, $c ? $c['display_name'] : 'Total',
-            $fmt($row['monBudget']),
+            $fmt($src['mon_budget']),
+            $fmt($src['carry_in']),
             $fmt($src['mon_actual']),
             $fmt($row['monDiff']),
             $fmt($row['annualBudget']),
@@ -83,7 +84,7 @@ if (($_GET['export'] ?? '') === 'csv') {
     $slug = preg_replace('/[^A-Za-z0-9_-]+/', '_', $budget['name']);
     outputCsv(
         'budget_' . $slug . '_' . $monStart . '.csv',
-        ['Section', 'Category', 'This Month Budget', 'This Month Actual', 'This Month Remaining',
+        ['Section', 'Category', 'This Month Budget', 'Rolled Over', 'This Month Actual', 'This Month Remaining',
          'Annual Budget', 'YTD Actual', '% of Annual Used', 'Expected-to-Date', 'Pace Status', 'Annual Remaining'],
         $csvRows
     );
@@ -153,7 +154,7 @@ function renderBarCell(float $actual, float $target, ?float $rawPct, string $bar
       <?php if ($target > 0): ?>
       <?= budgetMoney($actual) ?> of <?= formatMoney($target) ?><?= $captionSuffix ?>
       <?php elseif ($actual != 0): ?>
-      <?= budgetMoney($actual) ?>
+      <?= budgetMoney($actual) ?><?= $captionSuffix ?>
       <?php else: ?>
       <span class="text-muted">—</span>
       <?php endif; ?>
@@ -166,7 +167,7 @@ function renderBarCell(float $actual, float $target, ?float $rawPct, string $bar
 
 // Helper to render a section
 function renderBudgetSection(string $title, string $icon, array $cats, array $tot, bool $isIncome): void {
-    $totMonBudget    = $tot['mon_budget'];
+    $totMonBudget    = $tot['mon_available'];   // includes rolled-over amounts
     $totAnnualBudget = $tot['annual_budget'];
     $totMonActual    = $tot['mon_actual'];
     $totYtdActual    = $tot['ytd_actual'];
@@ -194,11 +195,17 @@ function renderBudgetSection(string $title, string $icon, array $cats, array $to
         $monActual = $c['mon_actual'];
         $ytdActual = $c['ytd_actual'];
         $row       = $c['metrics'];
-        $monSuffix = $row['monBudget'] > 0
+        $monSuffix = $row['monBudget'] > 0 || $c['rollover']
             ? ($row['monDiff'] < 0
                 ? ' <span class="text-danger">(' . formatMoney(abs($row['monDiff'])) . ($isIncome ? ' short' : ' over') . ')</span>'
                 : ' <span class="text-muted">(' . formatMoney($row['monDiff']) . ($isIncome ? ' surplus' : ' left') . ')</span>')
             : '';
+        if ($c['rollover'] && abs($c['carry_in']) >= 0.005) {
+            $monSuffix .= '<div class="bv-rollover-note">' . formatMoney($c['mon_budget']) . ' budget '
+                        . ($c['carry_in'] > 0 ? '+ ' . formatMoney($c['carry_in']) . ' rolled over'
+                                              : '− ' . formatMoney(-$c['carry_in']) . ' overspent earlier')
+                        . '</div>';
+        }
         $remaining = $row['annualRemaining'];
     ?>
     <tr>
@@ -207,6 +214,12 @@ function renderBudgetSection(string $title, string $icon, array $cats, array $to
         <span class="badge bg-secondary ms-1" style="font-size:.6rem"<?= $c['due_months'] ? '' : ' title="No due months: no monthly target, paced evenly over the year"' ?>>Annual<?= $c['due_months'] ? ' · ' . h(implode(', ', array_map(fn($m) => date('M', mktime(0, 0, 0, $m, 1)), $c['due_months']))) : '' ?></span>
         <?php elseif ($c['entry_type'] === 'variable'): ?>
         <span class="badge bg-info text-dark ms-1" style="font-size:.6rem">Variable</span>
+        <?php endif; ?>
+        <?php if ($c['rollover']): ?>
+        <span class="badge bg-light text-dark border ms-1" style="font-size:.6rem" title="Unspent budget (or overspending) carries into later months of the year">Rollover</span>
+        <?php endif; ?>
+        <?php if ($c['alert']): ?>
+        <i class="bi bi-exclamation-triangle-fill ms-1 bv-alert-icon bv-alert-<?= $c['alert']['level'] ?>" title="<?= h($c['alert']['text']) ?>"></i>
         <?php endif; ?>
       </td>
       <td>
@@ -338,6 +351,17 @@ function renderBudgetSection(string $title, string $icon, array $cats, array $to
 <?php endif; ?>
 
 <div class="bv-period-heading"><?= h($monthName) ?> · Year-to-date through <?= date('F', mktime(0,0,0,$selMon,1)) ?> <?= $selYear ?> (<?= round($selMon / 12 * 100) ?>% of year elapsed)</div>
+
+<?php if (!empty($model['alerts'])): ?>
+<div class="bv-alerts">
+  <div class="bv-alerts-title"><i class="bi bi-exclamation-triangle-fill"></i> <?= count($model['alerts']) ?> budget alert<?= count($model['alerts']) === 1 ? '' : 's' ?></div>
+  <ul class="mb-0">
+    <?php foreach ($model['alerts'] as $a): ?>
+    <li class="bv-alert-<?= $a['alert']['level'] ?>"><strong><?= h($a['display_name']) ?></strong> — <?= h($a['alert']['text']) ?></li>
+    <?php endforeach; ?>
+  </ul>
+</div>
+<?php endif; ?>
 
 <?php if (!empty($incomeCats)): ?>
 <?php renderBudgetSection('Income', 'bi-arrow-down-circle', $incomeCats, $model['totals']['income'], true); ?>
