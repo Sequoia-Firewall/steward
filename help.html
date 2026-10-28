@@ -805,6 +805,7 @@ pre code {
       <li>Check <strong>Use this budget for the dashboard widget</strong> if you want this budget's categories to appear on the dashboard's Budget tile. Only one budget can feed the dashboard at a time — turning this on for a budget automatically turns it off for every other budget.</li>
       <li>Optionally link specific accounts — only transactions in those accounts count toward this budget. Use the <strong>Select all</strong> link in each account-type group to quickly check or uncheck all accounts of that type.</li>
       <li>Add budget lines: pick a category and enter the monthly or annual target amount. The equivalent amount in the other period is shown as a hint.</li>
+      <li>For an <em>Annual</em> line, tick the <strong>Due</strong> months when the amount is actually paid (e.g. insurance due in March and September). The annual amount is split evenly across those months for the monthly target and for pacing. With no due months ticked, the line has no monthly target and is paced evenly across the year. Copying a budget keeps the due months.</li>
       <li>For variable categories (irregular spending), choose <em>Variable</em> entry type and enter a per-month amount for each month.</li>
       <li>Check <i class="bi bi-speedometer2"></i> <strong>Dashboard</strong> on any category line to include it on the dashboard widget (only takes effect if this budget's own dashboard toggle above is on). Turning that toggle on defaults every category currently in the budget to shown-on-dashboard; you can uncheck individual ones afterward.</li>
     </ol>
@@ -841,8 +842,14 @@ pre code {
     </p>
     <ul>
       <li><strong>This Month</strong> — actual spending/income so far this month vs. the monthly target.</li>
-      <li><strong>This Year</strong> — year-to-date actual vs. the full annual budget (all 12 months summed), with a dark <strong>pace marker</strong> showing how far through the year we are. Compare the filled bar to the marker to see if you're on pace: filled portion past the marker means spending is ahead of pace (or, for income, earning is behind pace).</li>
+      <li><strong>This Year</strong> — year-to-date actual vs. the full annual budget (all 12 months summed), with a dark <strong>pace marker</strong> at the share of the annual budget the line's schedule expects by now: its monthly targets through the selected month (so an annual line due in September jumps there in September), or an even share of the year for an annual line without due months. Filled portion past the marker means spending is ahead of pace (or, for income, earning is behind pace).</li>
     </ul>
+    <p>
+      Actuals are net amounts: refunds count against spending, so a month where refunds
+      outweigh purchases shows a negative amount rather than $0. A transaction counts toward
+      the budget line for its subcategory, or its parent category when only the parent is
+      budgeted. <strong>Untracked Activity</strong> lists only what no budget line covers.
+    </p>
     <p>
       Each row also shows a pace status (<span style="color:var(--green)">On Track</span>,
       Slightly Over/Behind, or <span style="color:#dc3545">Over/Behind Pace</span>) and an
@@ -850,8 +857,9 @@ pre code {
       how much more is needed to reach the target (income) for the rest of the year.
     </p>
     <p>
-      The <strong>Budget vs. Actual</strong> report (under Reports) shows a simpler month-by-month
-      comparison across any date range.
+      The <strong>Budget vs. Actual</strong> report (under Reports) shows a simpler one-month
+      comparison, with income and expense lines in separate tables, tiles and CSV sections
+      plus a net line. The Budgets page card shows this month's spending on expense lines.
     </p>
     <p>
       Click <strong>CSV</strong> in the filter bar to export the current budget/month view —
@@ -1106,7 +1114,7 @@ pre code {
       <tr><td>Spending History</td><td>Category spending over time — pivot table by month, quarter, or year with a stacked bar chart.</td></tr>
       <tr><td>Spending Trends</td><td>Category × month heatmap. Each cell is colored by spending intensity relative to that category's peak month, making seasonal patterns and spending spikes immediately visible.</td></tr>
       <tr><td>Cash Flow</td><td>Net cash flow by month. Portfolio withdrawals count as income and contributions to investments get their own column, as in Income vs. Expense.</td></tr>
-      <tr><td>Budget vs. Actual</td><td>Budgeted amounts compared to actual spending by category.</td></tr>
+      <tr><td>Budget vs. Actual</td><td>One month's budgeted amounts compared to actual income and spending by category, with income and expenses shown separately and a net total.</td></tr>
       <tr><td>Payee Summary</td><td>Total spending per payee for a date range.</td></tr>
       <tr><td>Account Flow</td><td>Revenue, expenses, and transfers for a single account.</td></tr>
     </table>

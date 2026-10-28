@@ -1,13 +1,12 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/_lib.php';
 requireLogin();
 
 $db    = getDB();
 $today = new DateTime();
 $mon   = (int)$today->format('n');
-$start = $today->format('Y-m-01');
-$end   = $today->format('Y-m-t');
 
 $budgets = $db->query(
     "SELECT b.*,
@@ -33,59 +32,14 @@ if (count($dashBudgets) > 1) {
     ];
 }
 
-// Current-month summary per budget
+// Current-month spending per budget: expense lines only, signed (net refunds lower it)
 $summaries = [];
 foreach ($budgets as $b) {
-    $bid = (int)$b['id'];
-
-    $cats = $db->prepare(
-        "SELECT bc.id, bc.category_id, bc.entry_type, bc.amount
-         FROM budget_categories bc WHERE bc.budget_id = ?"
-    );
-    $cats->execute([$bid]);
-    $catRows = $cats->fetchAll();
-
-    if (empty($catRows)) { $summaries[$bid] = ['budgeted' => 0, 'actual' => 0]; continue; }
-
-    $bcIds = array_column($catRows, 'id');
-    $phs   = implode(',', array_fill(0, count($bcIds), '?'));
-    $mStmt = $db->prepare(
-        "SELECT budget_category_id, amount FROM budget_monthly_amounts
-         WHERE budget_category_id IN ($phs) AND month = ?"
-    );
-    $mStmt->execute([...$bcIds, $mon]);
-    $mMap = [];
-    foreach ($mStmt->fetchAll() as $r) {
-        $mMap[(int)$r['budget_category_id']][$mon] = (float)$r['amount'];
-    }
-
-    $totBudgeted = 0;
-    foreach ($catRows as $bc) {
-        $totBudgeted += getBudgetMonthlyAmount($bc, $mon, $mMap);
-    }
-
-    $acctStmt = $db->prepare("SELECT account_id FROM budget_accounts WHERE budget_id = ?");
-    $acctStmt->execute([$bid]);
-    $acctIds = array_column($acctStmt->fetchAll(), 'account_id');
-
-    $totActual = 0;
-    if (!empty($acctIds)) {
-        $catIds = array_column($catRows, 'category_id');
-        $aPhs   = implode(',', array_fill(0, count($acctIds), '?'));
-        $cPhs   = implode(',', array_fill(0, count($catIds), '?'));
-        $aStmt  = $db->prepare(
-            "SELECT ABS(SUM(ts.amount)) AS actual
-             FROM transaction_splits ts
-             JOIN transactions t ON t.id = ts.transaction_id
-             WHERE t.transaction_date BETWEEN ? AND ?
-               AND t.account_id IN ($aPhs)
-               AND (ts.category_id IN ($cPhs) OR ts.subcategory_id IN ($cPhs))"
-        );
-        $aStmt->execute([$start, $end, ...$acctIds, ...$catIds, ...$catIds]);
-        $totActual = (float)($aStmt->fetchColumn() ?? 0);
-    }
-
-    $summaries[$bid] = ['budgeted' => $totBudgeted, 'actual' => $totActual];
+    $model = loadBudgetModel((int)$b['id'], (int)$today->format('Y'), $mon, ['with_untracked' => false]);
+    $summaries[(int)$b['id']] = [
+        'budgeted' => $model['totals']['expense']['mon_budget'],
+        'actual'   => $model['totals']['expense']['mon_actual'],
+    ];
 }
 
 $pageTitle   = 'Budgets';
@@ -133,7 +87,7 @@ include __DIR__ . '/../includes/header.php';
   <?php foreach ($budgets as $b):
     $bid  = (int)$b['id'];
     $sum  = $summaries[$bid];
-    $pct  = $sum['budgeted'] > 0 ? min($sum['actual'] / $sum['budgeted'] * 100, 100) : null;
+    $pct  = $sum['budgeted'] > 0 ? max(0, min($sum['actual'] / $sum['budgeted'] * 100, 100)) : null;
     $over = $sum['budgeted'] > 0 && $sum['actual'] > $sum['budgeted'];
   ?>
   <div class="budget-card">
@@ -172,12 +126,12 @@ include __DIR__ . '/../includes/header.php';
       <span><i class="bi bi-wallet2"></i> <?= $b['acct_count'] ?> account<?= $b['acct_count'] != 1 ? 's' : '' ?></span>
       <span><i class="bi bi-tags"></i> <?= $b['cat_count'] ?> categor<?= $b['cat_count'] != 1 ? 'ies' : 'y' ?></span>
     </div>
-    <?php if ($sum['budgeted'] > 0 || $sum['actual'] > 0): ?>
+    <?php if ($sum['budgeted'] > 0 || $sum['actual'] != 0): ?>
     <div class="budget-card-perf">
       <div class="bcp-row">
-        <span class="text-muted" style="font-size:.78rem"><?= $today->format('F Y') ?></span>
+        <span class="text-muted" style="font-size:.78rem"><?= $today->format('F Y') ?> spending</span>
         <span class="<?= $over ? 'amount-debit' : '' ?>" style="font-size:.85rem">
-          <?= formatMoney($sum['actual']) ?> / <?= formatMoney($sum['budgeted']) ?>
+          <?= budgetMoney($sum['actual']) ?> / <?= formatMoney($sum['budgeted']) ?>
         </span>
       </div>
       <?php if ($pct !== null): ?>

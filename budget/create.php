@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/_lib.php';
 requireLogin();
 if (!canManageBudgets()) {
     setFlash('error', 'You do not have permission to create or edit budgets.');
@@ -43,6 +44,7 @@ if ($isEdit) {
                 'type'      => $r['entry_type'],
                 'amount'    => (float)$r['amount'],
                 'months'    => [],
+                'due'       => parseDueMonths($r['due_months']),
                 'dashboard' => (int)$r['show_on_dashboard'],
             ];
         }
@@ -355,6 +357,7 @@ function updateEntryType(sel) {
   const isVar = sel.value === 'variable';
   row.querySelector('.wiz-cat-amount-wrap').classList.toggle('d-none', isVar);
   row.querySelector('.wiz-cat-variable').classList.toggle('d-none', !isVar);
+  row.querySelector('.wiz-due-months')?.classList.toggle('d-none', sel.value !== 'annual');
   if (isVar) updateVarTotal(row); else updateEquivHint(row);
 }
 
@@ -365,7 +368,10 @@ function updateEquivHint(row) {
   if (!sel || !input || !hint) return;
   const val = parseFloat(input.value) || 0;
   if (val <= 0) { hint.textContent = ''; return; }
-  if (sel.value === 'annual')  hint.textContent = '= $' + Math.round(val / 12).toLocaleString() + '/mo';
+  if (sel.value === 'annual') {
+    const due = row.querySelectorAll('.wiz-due-months input:checked').length;
+    hint.textContent = due ? '= $' + Math.round(val / due).toLocaleString() + ' in each due month' : 'no monthly target';
+  }
   if (sel.value === 'monthly') hint.textContent = '= $' + Math.round(val * 12).toLocaleString() + '/yr';
 }
 
@@ -381,6 +387,7 @@ document.addEventListener('input', function (e) {
   const row = e.target.closest('.wiz-cat-row');
   if (!row) return;
   if (e.target.matches('.wiz-cat-amount'))           updateEquivHint(row);
+  if (e.target.closest('.wiz-due-months'))            updateEquivHint(row);
   if (e.target.closest('.wiz-months-grid'))           updateVarTotal(row);
 });
 

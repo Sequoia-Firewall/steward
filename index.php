@@ -630,7 +630,7 @@ function widgetWrap(string $id, string $label, string $icon, bool $hidden, strin
         </div>
         <div class="dbw-item-amounts">
           <span class="<?= ($item['raw_pct'] !== null && $item['raw_pct'] > 100) ? 'amount-debit' : '' ?>">
-            <?= formatMoney($item['actual']) ?>
+            <?= budgetMoney($item['actual']) ?>
           </span>
           <?php if ($item['budgeted'] > 0): ?>
           <span class="dbw-item-sep">/</span>

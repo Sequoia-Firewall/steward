@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/_lib.php';
 requireLogin();
 if (!canManageBudgets()) { http_response_code(403); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -68,8 +69,8 @@ try {
 
     // Insert categories
     $insCat = $db->prepare(
-        "INSERT INTO budget_categories (budget_id, category_id, entry_type, amount, show_on_dashboard)
-         VALUES (?,?,?,?,?)"
+        "INSERT INTO budget_categories (budget_id, category_id, entry_type, amount, due_months, show_on_dashboard)
+         VALUES (?,?,?,?,?,?)"
     );
     $insMon = $db->prepare(
         "INSERT INTO budget_monthly_amounts (budget_category_id, month, amount) VALUES (?,?,?)"
@@ -83,8 +84,9 @@ try {
             ? $data['type'] : 'monthly';
         $amount    = $entryType !== 'variable' ? max(0, (float)($data['amount'] ?? 0)) : 0;
         $dashCat   = !empty($data['dashboard']) ? 1 : 0;
+        $dueMonths = $entryType === 'annual' ? formatDueMonths($data['due'] ?? []) : null;
 
-        $insCat->execute([$budgetId, $catId, $entryType, $amount, $dashCat]);
+        $insCat->execute([$budgetId, $catId, $entryType, $amount, $dueMonths, $dashCat]);
         $bcId = (int)$db->lastInsertId();
 
         if ($entryType === 'variable') {

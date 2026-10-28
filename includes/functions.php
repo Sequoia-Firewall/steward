@@ -456,104 +456,38 @@ function getMonthlySpending(int $year, int $month, array $accountIds = []): arra
 
 // ── Budget ─────────────────────────────────────────────────────
 
-function getBudgetMonthlyAmount(array $bc, int $month, array $monthlyAmtMap): float {
-    return match($bc['entry_type']) {
-        'annual'   => (float)$bc['amount'] / 12,
-        'variable' => (float)($monthlyAmtMap[(int)$bc['id']][$month] ?? 0),
-        default    => (float)$bc['amount'],
-    };
-}
-
+// Lines of the dashboard budget marked for the widget, with this month's
+// target and signed actual (net refunds come out negative). Math: budget/_lib.php.
 function getBudgetDashboardItems(): array {
-    $today     = new DateTime();
-    $startDate = $today->format('Y-m-01');
-    $endDate   = $today->format('Y-m-t');
-    $month     = (int)$today->format('n');
-    $db        = getDB();
-
-    $budget = $db->query(
+    require_once __DIR__ . '/../budget/_lib.php';
+    $budget = getDB()->query(
         "SELECT id FROM budgets WHERE show_on_dashboard = 1 AND is_active = 1 ORDER BY id LIMIT 1"
     )->fetch();
     if (!$budget) return [];
-    $budgetId = (int)$budget['id'];
 
-    $stmt = $db->prepare(
-        "SELECT bc.id, bc.category_id, bc.entry_type, bc.amount, c.name, c.type AS category_type
-         FROM budget_categories bc
-         JOIN categories c ON c.id = bc.category_id
-         WHERE bc.budget_id = ? AND bc.show_on_dashboard = 1
-         ORDER BY FIELD(c.type,'income','expense','transfer'), c.name"
-    );
-    $stmt->execute([$budgetId]);
-    $items = $stmt->fetchAll();
-    if (empty($items)) return [];
-
-    // Fetch variable monthly amounts for this month
-    $bcIds = array_column($items, 'id');
-    $phs   = implode(',', array_fill(0, count($bcIds), '?'));
-    $mAmt  = $db->prepare(
-        "SELECT budget_category_id, amount FROM budget_monthly_amounts
-         WHERE budget_category_id IN ($phs) AND month = ?"
-    );
-    $mAmt->execute([...$bcIds, $month]);
-    $monthlyAmtMap = [];
-    foreach ($mAmt->fetchAll() as $r) {
-        $monthlyAmtMap[(int)$r['budget_category_id']][$month] = (float)$r['amount'];
+    $model = loadBudgetModel((int)$budget['id'], (int)date('Y'), (int)date('n'), ['with_untracked' => false]);
+    $items = [];
+    foreach ($model['lines'] as $l) {
+        if (!$l['show_on_dashboard']) continue;
+        $budgeted = $l['mon_budget'];
+        $actual   = $l['mon_actual'];
+        $rawPct   = $budgeted > 0 ? ($actual / $budgeted) * 100 : null;
+        $items[] = [
+            'id'            => $l['bc_id'],
+            'category_id'   => $l['category_id'],
+            'name'          => $l['name'],
+            'category_type' => $l['cat_type'],
+            'entry_type'    => $l['entry_type'],
+            'budgeted'      => $budgeted,
+            'actual'        => $actual,
+            'remaining'     => $budgeted > 0 ? $budgeted - $actual : null,
+            'raw_pct'       => $rawPct,
+            'pct'           => $rawPct !== null ? max(0, min($rawPct, 100)) : null,
+        ];
     }
-
-    // Fetch actuals from budget accounts
-    $acctIds = array_column(
-        $db->prepare("SELECT account_id FROM budget_accounts WHERE budget_id = ?")
-           ->execute([$budgetId]) ? [] : [],
-        'account_id'
-    );
-    $acctStmt = $db->prepare("SELECT account_id FROM budget_accounts WHERE budget_id = ?");
-    $acctStmt->execute([$budgetId]);
-    $acctIds = array_column($acctStmt->fetchAll(), 'account_id');
-
-    $actualMap = [];
-    if (!empty($acctIds)) {
-        $catIds  = array_column($items, 'category_id');
-        $catSet  = array_flip($catIds);
-        $aPhs    = implode(',', array_fill(0, count($acctIds), '?'));
-        $cPhs    = implode(',', array_fill(0, count($catIds), '?'));
-        $actStmt = $db->prepare(
-            "SELECT ts.category_id,
-                    COALESCE(ts.subcategory_id, ts.category_id) AS eff_cat_id,
-                    SUM(ts.amount) AS actual
-             FROM transaction_splits ts
-             JOIN transactions t ON t.id = ts.transaction_id
-             WHERE t.transaction_date BETWEEN ? AND ?
-               AND t.account_id IN ($aPhs)
-               AND (ts.category_id IN ($cPhs) OR ts.subcategory_id IN ($cPhs))
-             GROUP BY ts.category_id, COALESCE(ts.subcategory_id, ts.category_id)"
-        );
-        $actStmt->execute([$startDate, $endDate, ...$acctIds, ...$catIds, ...$catIds]);
-        foreach ($actStmt->fetchAll() as $row) {
-            $eid = (int)$row['eff_cat_id'];
-            $cid = (int)$row['category_id'];
-            $key = isset($catSet[$eid]) ? $eid : (isset($catSet[$cid]) ? $cid : null);
-            if ($key !== null) {
-                $actualMap[$key] = ($actualMap[$key] ?? 0.0) + (float)$row['actual'];
-            }
-        }
-    }
-
-    foreach ($items as &$item) {
-        $budgeted          = getBudgetMonthlyAmount($item, $month, $monthlyAmtMap);
-        // Signed sum nets refunds against spending; normalize per category type
-        // like budget/view.php (a net-refund month floors at 0, not |net|).
-        $rawActual         = $actualMap[(int)$item['category_id']] ?? 0.0;
-        $actual            = $item['category_type'] === 'income'
-            ? max(0.0, $rawActual)
-            : abs(min(0.0, $rawActual));
-        $item['budgeted']  = $budgeted;
-        $item['actual']    = $actual;
-        $item['remaining'] = $budgeted > 0 ? $budgeted - $actual : null;
-        $item['raw_pct']   = $budgeted > 0 ? ($actual / $budgeted) * 100 : null;
-        $item['pct']       = $item['raw_pct'] !== null ? min($item['raw_pct'], 100) : null;
-    }
-    unset($item);
+    // Income first, then expenses, each by name (as before)
+    usort($items, fn($a, $b) => (($a['category_type'] !== 'income') <=> ($b['category_type'] !== 'income'))
+                                 ?: strcasecmp($a['name'], $b['name']));
     return $items;
 }
 
@@ -1855,8 +1789,8 @@ function outputCsv(string $filename, array $headers, array $rows): never {
     header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
     header('Cache-Control: no-cache, no-store, must-revalidate');
     $out = fopen('php://output', 'w');
-    fputcsv($out, array_map('csvSafeCell', $headers));
-    foreach ($rows as $row) fputcsv($out, array_map('csvSafeCell', array_values($row)));
+    fputcsv($out, array_map('csvSafeCell', $headers), ',', '"', '\\');
+    foreach ($rows as $row) fputcsv($out, array_map('csvSafeCell', array_values($row)), ',', '"', '\\');
     fclose($out);
     exit;
 }

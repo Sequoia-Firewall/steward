@@ -39,19 +39,19 @@ try {
     }
 
     $insCat = $db->prepare(
-        "INSERT INTO budget_categories (budget_id, category_id, entry_type, amount, show_on_dashboard)
-         VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO budget_categories (budget_id, category_id, entry_type, amount, due_months, show_on_dashboard)
+         VALUES (?, ?, ?, ?, ?, ?)"
     );
     $insMon = $db->prepare(
         "INSERT INTO budget_monthly_amounts (budget_category_id, month, amount) VALUES (?, ?, ?)"
     );
     $catStmt = $db->prepare(
-        "SELECT id, category_id, entry_type, amount, show_on_dashboard FROM budget_categories WHERE budget_id = ?"
+        "SELECT id, category_id, entry_type, amount, due_months, show_on_dashboard FROM budget_categories WHERE budget_id = ?"
     );
     $catStmt->execute([$srcId]);
     $monStmt = $db->prepare("SELECT month, amount FROM budget_monthly_amounts WHERE budget_category_id = ?");
     foreach ($catStmt->fetchAll() as $c) {
-        $insCat->execute([$newId, $c['category_id'], $c['entry_type'], $c['amount'], $c['show_on_dashboard']]);
+        $insCat->execute([$newId, $c['category_id'], $c['entry_type'], $c['amount'], $c['due_months'], $c['show_on_dashboard']]);
         $newBcId = (int)$db->lastInsertId();
 
         if ($c['entry_type'] === 'variable') {

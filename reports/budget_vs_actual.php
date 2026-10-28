@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../budget/_lib.php';
 requireLogin();
 
 $db = getDB();
@@ -40,23 +41,9 @@ $startDate = sprintf('%04d-%02d-01', $year, $month);
 $endDate   = date('Y-m-t', strtotime($startDate));
 $monthName = date('F Y', strtotime($startDate));
 
-// ── Budget categories for selected budget ──────────────────────
-$bcStmt = $db->prepare(
-    "SELECT bc.id AS bc_id, bc.category_id, bc.entry_type, bc.amount, c.name, c.type AS category_type, p.name AS parent_name,
-            GROUP_CONCAT(bma.month ORDER BY bma.month SEPARATOR ',') AS months,
-            GROUP_CONCAT(bma.amount ORDER BY bma.month SEPARATOR ',') AS month_amounts
-     FROM budget_categories bc
-     JOIN categories c ON c.id = bc.category_id
-     LEFT JOIN categories p ON p.id = c.parent_id
-     LEFT JOIN budget_monthly_amounts bma ON bma.budget_category_id = bc.id
-     WHERE bc.budget_id = ?
-     GROUP BY bc.id
-     ORDER BY COALESCE(p.name, c.name), c.name"
-);
-$bcStmt->execute([$budgetId]);
-$budgetItems = $bcStmt->fetchAll();
-
-if (empty($budgetItems)) {
+// ── Budget lines and actuals (budget/_lib.php) ────────────────
+$model = loadBudgetModel($budgetId, $year, $month, ['with_untracked' => false]);
+if (!$model || empty($model['lines'])) {
     $pageTitle = 'Budget vs. Actual'; $currentPage = 'reports';
     include __DIR__ . '/../includes/header.php';
     echo '<div class="page-header"><h2><i class="bi bi-bar-chart-line"></i> Budget vs. Actual</h2></div>';
@@ -65,102 +52,68 @@ if (empty($budgetItems)) {
     exit;
 }
 
-// Budget accounts for actuals filter
-$acctStmt = $db->prepare("SELECT account_id FROM budget_accounts WHERE budget_id = ?");
-$acctStmt->execute([$budgetId]);
-$acctIds = array_column($acctStmt->fetchAll(), 'account_id');
-
-// ── Compute budgeted amount for this month ─────────────────────
-foreach ($budgetItems as &$b) {
-    $mMap = [];
-    if ($b['months']) {
-        $mons = explode(',', $b['months']);
-        $amts = explode(',', $b['month_amounts']);
-        foreach ($mons as $i => $m) $mMap[(int)$m] = (float)$amts[$i];
-    }
-    $b['budgeted'] = match($b['entry_type']) {
-        'annual'   => (float)$b['amount'] / 12,
-        'variable' => $mMap[$month] ?? 0,
-        default    => (float)$b['amount'],
-    };
-    $b['display_name'] = $b['parent_name'] ? $b['parent_name'] . ': ' . $b['name'] : $b['name'];
+// Actuals are signed in each line's direction (net refunds come out negative).
+// Remaining is budget minus actual for both: money left to spend, or income still to come.
+function bvaItems(array $lines): array {
+    return array_map(function ($l) {
+        $budgeted = $l['mon_budget'];
+        $actual   = $l['mon_actual'];
+        $rawPct   = $budgeted > 0 ? ($actual / $budgeted * 100) : null;
+        return [
+            'name'     => $l['display_name'],
+            'budgeted' => $budgeted,
+            'actual'   => $actual,
+            'diff'     => round($budgeted - $actual, MONEY_DECIMALS),
+            'pct'      => $rawPct !== null ? max(0, min($rawPct, 100)) : null,
+            'raw_pct'  => $rawPct,
+            'bar_cls'  => budgetBarClass($rawPct, $l['is_income']),
+        ];
+    }, $lines);
 }
-unset($b);
-
-// ── Actuals for this period (budget accounts only) ─────────────
-$catIds = array_column($budgetItems, 'category_id');
-$actualMap = [];
-if (!empty($acctIds) && !empty($catIds)) {
-    $catSet  = array_flip($catIds);
-    $aPhs    = implode(',', array_fill(0, count($acctIds), '?'));
-    $cPhs    = implode(',', array_fill(0, count($catIds), '?'));
-    $actStmt = $db->prepare(
-        "SELECT ts.category_id,
-                COALESCE(ts.subcategory_id, ts.category_id) AS eff_cat_id,
-                SUM(ts.amount) AS actual
-         FROM transaction_splits ts
-         JOIN transactions t ON t.id = ts.transaction_id
-         WHERE t.transaction_date BETWEEN ? AND ?
-           AND t.account_id IN ($aPhs)
-           AND (ts.category_id IN ($cPhs) OR ts.subcategory_id IN ($cPhs))
-         GROUP BY ts.category_id, COALESCE(ts.subcategory_id, ts.category_id)"
-    );
-    $actStmt->execute([$startDate, $endDate, ...$acctIds, ...$catIds, ...$catIds]);
-    foreach ($actStmt->fetchAll() as $r) {
-        $eid = (int)$r['eff_cat_id'];
-        $cid = (int)$r['category_id'];
-        $key = isset($catSet[$eid]) ? $eid : (isset($catSet[$cid]) ? $cid : null);
-        if ($key !== null) $actualMap[$key] = ($actualMap[$key] ?? 0.0) + (float)$r['actual'];
-    }
-}
-
-// ── Combine ────────────────────────────────────────────────────
-$items     = [];
-$totBudget = 0;
-$totActual = 0;
-foreach ($budgetItems as $b) {
-    $budgeted = (float)$b['budgeted'];
-    // Signed sum nets refunds against spending; normalize per category type
-    // like budget/view.php (a net-refund month floors at 0, not |net|).
-    $raw      = $actualMap[(int)$b['category_id']] ?? 0.0;
-    $actual   = $b['category_type'] === 'income' ? max(0.0, $raw) : abs(min(0.0, $raw));
-    $diff     = round($budgeted - $actual, MONEY_DECIMALS);
-    $pct      = $budgeted > 0 ? min($actual / $budgeted * 100, 100) : null;
-    $rawPct   = $budgeted > 0 ? ($actual / $budgeted * 100) : null;
-    $totBudget += $budgeted;
-    $totActual += $actual;
-    $items[] = [
-        'name'     => $b['display_name'],
-        'budgeted' => $budgeted,
-        'actual'   => $actual,
-        'diff'     => $diff,
-        'pct'      => $pct,
-        'raw_pct'  => $rawPct,
+$sections = [];
+foreach (['income' => 'Income', 'expense' => 'Expenses'] as $key => $label) {
+    if (empty($model[$key])) continue;
+    $tot = $model['totals'][$key];
+    $sections[$key] = [
+        'label'     => $label,
+        'is_income' => $key === 'income',
+        'items'     => bvaItems($model[$key]),
+        'budget'    => $tot['mon_budget'],
+        'actual'    => $tot['mon_actual'],
+        'diff'      => round($tot['mon_budget'] - $tot['mon_actual'], MONEY_DECIMALS),
     ];
 }
-$totDiff = round($totBudget - $totActual, MONEY_DECIMALS);
+$incBudget = $sections['income']['budget']  ?? 0.0;
+$incActual = $sections['income']['actual']  ?? 0.0;
+$expBudget = $sections['expense']['budget'] ?? 0.0;
+$expActual = $sections['expense']['actual'] ?? 0.0;
+$netBudget = $incBudget - $expBudget;
+$netActual = $incActual - $expActual;
 
-// Chart data (horizontal bar)
-$chartLabels   = array_column($items, 'name');
-$chartBudgeted = array_map(fn($i) => round($i['budgeted'], 2), $items);
-$chartActual   = array_map(fn($i) => round($i['actual'],   2), $items);
+// Chart data (horizontal bar): income lines first, then expense lines
+$allItems      = array_merge(...array_map(fn($s) => $s['items'], array_values($sections)));
+$chartLabels   = array_column($allItems, 'name');
+$chartBudgeted = array_map(fn($i) => round($i['budgeted'], 2), $allItems);
+$chartActual   = array_map(fn($i) => round($i['actual'],   2), $allItems);
 
 // ── CSV Export ─────────────────────────────────────────────────
 if (($_GET['export'] ?? '') === 'csv') {
-    $csvRows = array_map(
-        fn($i) => [$i['name'],
-                   number_format($i['budgeted'], 2, '.', ''),
-                   number_format($i['actual'],   2, '.', ''),
-                   number_format($i['diff'],     2, '.', ''),
-                   $i['raw_pct'] !== null ? round($i['raw_pct'], 1) . '%' : ''],
-        $items
-    );
-    $csvRows[] = ['Total',
-                  number_format($totBudget, 2, '.', ''), number_format($totActual, 2, '.', ''),
-                  number_format($totDiff,   2, '.', ''),
-                  $totBudget > 0 ? round($totActual / $totBudget * 100, 1) . '%' : ''];
+    $fmt = fn($v) => number_format($v, 2, '.', '');
+    $pct = fn($a, $b) => $b > 0 ? round($a / $b * 100, 1) . '%' : '';
+    $csvRows = [];
+    foreach ($sections as $sec) {
+        foreach ($sec['items'] as $i) {
+            $csvRows[] = [$sec['label'], $i['name'], $fmt($i['budgeted']), $fmt($i['actual']), $fmt($i['diff']),
+                          $i['raw_pct'] !== null ? round($i['raw_pct'], 1) . '%' : ''];
+        }
+        $csvRows[] = [$sec['label'], 'Total', $fmt($sec['budget']), $fmt($sec['actual']), $fmt($sec['diff']),
+                      $pct($sec['actual'], $sec['budget'])];
+    }
+    if (count($sections) === 2) {
+        $csvRows[] = ['Net', 'Income − Expenses', $fmt($netBudget), $fmt($netActual), $fmt($netActual - $netBudget), ''];
+    }
     outputCsv('budget_vs_actual_' . $startDate . '.csv',
-              ['Category', 'Budgeted', 'Actual', 'Remaining', '% Used'], $csvRows);
+              ['Section', 'Category', 'Budgeted', 'Actual', 'Remaining', '% Used'], $csvRows);
 }
 
 $pageTitle   = 'Budget vs. Actual';
@@ -215,53 +168,65 @@ include __DIR__ . '/../includes/header.php';
 </form>
 
 <div class="report-tiles">
-  <div class="report-tile tile-neutral">
-    <div class="tile-label">Total Budget</div>
-    <div class="tile-value"><?= formatMoney($totBudget) ?></div>
+  <?php if (isset($sections['income'])): ?>
+  <div class="report-tile tile-income">
+    <div class="tile-label">Income</div>
+    <div class="tile-value"><?= budgetMoney($incActual) ?></div>
+    <div class="tile-sub">of <?= formatMoney($incBudget) ?> budgeted</div>
   </div>
+  <?php endif; ?>
+  <?php if (isset($sections['expense'])): ?>
   <div class="report-tile tile-expense">
-    <div class="tile-label">Total Actual</div>
-    <div class="tile-value"><?= formatMoney($totActual) ?></div>
+    <div class="tile-label">Expenses</div>
+    <div class="tile-value"><?= budgetMoney($expActual) ?></div>
+    <div class="tile-sub">of <?= formatMoney($expBudget) ?> budgeted</div>
   </div>
-  <div class="report-tile <?= $totDiff >= 0 ? 'tile-positive' : 'tile-negative' ?>">
-    <div class="tile-label"><?= $totDiff >= 0 ? 'Remaining' : 'Over Budget' ?></div>
-    <div class="tile-value"><?= formatMoney(abs($totDiff)) ?></div>
+  <div class="report-tile <?= $sections['expense']['diff'] >= 0 ? 'tile-positive' : 'tile-negative' ?>">
+    <div class="tile-label"><?= $sections['expense']['diff'] >= 0 ? 'Left to Spend' : 'Over Budget' ?></div>
+    <div class="tile-value"><?= formatMoney(abs($sections['expense']['diff'])) ?></div>
   </div>
+  <?php endif; ?>
+  <?php if (count($sections) === 2): ?>
+  <div class="report-tile <?= $netActual >= 0 ? 'tile-positive' : 'tile-negative' ?>">
+    <div class="tile-label">Net</div>
+    <div class="tile-value"><?= budgetMoney($netActual) ?></div>
+    <div class="tile-sub">plan <?= formatMoney($netBudget) ?></div>
+  </div>
+  <?php endif; ?>
 </div>
 
 <div class="report-chart-wrap">
-  <canvas id="bvaChart" height="<?= max(60, count($items) * 20) ?>"></canvas>
+  <canvas id="bvaChart" height="<?= max(60, count($allItems) * 20) ?>"></canvas>
 </div>
 
+<?php foreach ($sections as $sec): $isInc = $sec['is_income']; ?>
+<h5 class="mt-3"><i class="bi <?= $isInc ? 'bi-arrow-down-circle' : 'bi-arrow-up-circle' ?>"></i> <?= $sec['label'] ?></h5>
 <table class="table table-sm report-table">
   <thead>
     <tr>
       <th>Category</th>
       <th class="text-end">Budgeted</th>
       <th class="text-end">Actual</th>
-      <th class="text-end">Remaining</th>
+      <th class="text-end"><?= $isInc ? 'To Go' : 'Remaining' ?></th>
       <th style="width:140px">Progress</th>
       <th class="text-end">%</th>
     </tr>
   </thead>
   <tbody>
-    <?php foreach ($items as $item):
-      $barCls = $item['raw_pct'] === null ? 'bar-none'
-              : ($item['raw_pct'] > 100 ? 'bar-over' : ($item['raw_pct'] >= 80 ? 'bar-warn' : 'bar-ok'));
-    ?>
+    <?php foreach ($sec['items'] as $item): ?>
     <tr>
       <td><?= h($item['name']) ?></td>
       <td class="text-end"><?= formatMoney($item['budgeted']) ?></td>
-      <td class="text-end"><?= $item['actual'] > 0 ? formatMoney($item['actual']) : '—' ?></td>
-      <td class="text-end <?= $item['diff'] < 0 ? 'amount-debit' : '' ?>">
+      <td class="text-end"><?= $item['actual'] != 0 ? budgetMoney($item['actual']) : '—' ?></td>
+      <td class="text-end <?= !$isInc && $item['diff'] < 0 ? 'amount-debit' : '' ?>">
         <?= $item['budgeted'] > 0 ? formatMoney($item['diff']) : '—' ?>
       </td>
       <td>
         <div class="budget-bar-track">
-          <div class="budget-bar-fill <?= $barCls ?>" style="width:<?= round($item['pct'] ?? 0, 1) ?>%"></div>
+          <div class="budget-bar-fill <?= $item['bar_cls'] ?>" style="width:<?= round($item['pct'] ?? 0, 1) ?>%"></div>
         </div>
       </td>
-      <td class="text-end budget-pct <?= $barCls ?>">
+      <td class="text-end budget-pct <?= $item['bar_cls'] ?>">
         <?= $item['raw_pct'] !== null ? round($item['raw_pct']) . '%' : '—' ?>
       </td>
     </tr>
@@ -270,16 +235,17 @@ include __DIR__ . '/../includes/header.php';
   <tfoot>
     <tr class="fw-bold">
       <td>Total</td>
-      <td class="text-end"><?= formatMoney($totBudget) ?></td>
-      <td class="text-end"><?= formatMoney($totActual) ?></td>
-      <td class="text-end <?= $totDiff < 0 ? 'amount-debit' : '' ?>"><?= formatMoney($totDiff) ?></td>
+      <td class="text-end"><?= formatMoney($sec['budget']) ?></td>
+      <td class="text-end"><?= budgetMoney($sec['actual']) ?></td>
+      <td class="text-end <?= !$isInc && $sec['diff'] < 0 ? 'amount-debit' : '' ?>"><?= formatMoney($sec['diff']) ?></td>
       <td></td>
-      <td class="text-end <?= $totBudget > 0 ? ($totActual/$totBudget > 1 ? 'amount-debit' : '') : '' ?>">
-        <?= $totBudget > 0 ? round($totActual / $totBudget * 100) . '%' : '—' ?>
+      <td class="text-end <?= !$isInc && $sec['budget'] > 0 && $sec['actual'] > $sec['budget'] ? 'amount-debit' : '' ?>">
+        <?= $sec['budget'] > 0 ? round($sec['actual'] / $sec['budget'] * 100) . '%' : '—' ?>
       </td>
     </tr>
   </tfoot>
 </table>
+<?php endforeach; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>

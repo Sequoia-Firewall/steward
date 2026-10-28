@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/_lib.php';
 requireLogin();
 
 $db = getDB();
@@ -33,8 +34,6 @@ $selMon  = max(1, min(12, $selMon));
 
 $monStart = sprintf('%04d-%02d-01', $selYear, $selMon);
 $monEnd   = date('Y-m-t', strtotime($monStart));
-$ytdStart = sprintf('%04d-01-01', $selYear);
-$ytdEnd   = $monEnd;
 
 // Available years (transactions + current)
 $years = $db->query(
@@ -43,307 +42,44 @@ $years = $db->query(
 if (!in_array($today->format('Y'), $years)) $years[] = (int)$today->format('Y');
 rsort($years);
 
-// Budget accounts
-$acctStmt = $db->prepare("SELECT account_id FROM budget_accounts WHERE budget_id = ?");
-$acctStmt->execute([$budgetId]);
-$acctIds = array_column($acctStmt->fetchAll(), 'account_id');
-
-// Budget categories with monthly amounts (join parent for display names)
-$cStmt = $db->prepare(
-    "SELECT bc.id AS bc_id, bc.category_id, bc.entry_type, bc.amount,
-            c.name, c.type AS cat_type, c.parent_id,
-            p.name AS parent_name,
-            GROUP_CONCAT(bma.month ORDER BY bma.month SEPARATOR ',') AS months,
-            GROUP_CONCAT(bma.amount ORDER BY bma.month SEPARATOR ',') AS month_amounts
-     FROM budget_categories bc
-     JOIN categories c ON c.id = bc.category_id
-     LEFT JOIN categories p ON p.id = c.parent_id
-     LEFT JOIN budget_monthly_amounts bma ON bma.budget_category_id = bc.id
-     WHERE bc.budget_id = ?
-     GROUP BY bc.id
-     ORDER BY c.type, COALESCE(p.name, c.name), c.name"
-);
-$cStmt->execute([$budgetId]);
-
-$incomeCats  = [];
-$expenseCats = [];
-foreach ($cStmt->fetchAll() as $r) {
-    // Rebuild monthly amounts map
-    $mMap = [];
-    if ($r['months']) {
-        $mons = explode(',', $r['months']);
-        $amts = explode(',', $r['month_amounts']);
-        foreach ($mons as $i => $m) {
-            $mMap[(int)$m] = (float)$amts[$i];
-        }
-    }
-    $r['month_map']    = $mMap;
-    $r['display_name'] = $r['parent_name'] ? $r['parent_name'] . ': ' . $r['name'] : $r['name'];
-
-    // Monthly budget amount for selected month
-    $r['mon_budget'] = match($r['entry_type']) {
-        'annual'   => (float)$r['amount'] / 12,
-        'variable' => $mMap[$selMon] ?? 0,
-        default    => (float)$r['amount'],
-    };
-
-    // Full annual budget target — all 12 months, independent of the selected month.
-    // This is the number annual-compliance tracking (pace, % used) is measured against.
-    $r['annual_budget'] = match($r['entry_type']) {
-        'annual'   => (float)$r['amount'],
-        'variable' => array_sum(array_map(fn($m) => $mMap[$m] ?? 0, range(1, 12))),
-        default    => (float)$r['amount'] * 12,
-    };
-
-    // Expected-to-date budget: prorated Jan-through-selected-month target, used only
-    // as the "where you should be" pace reference — not the annual total.
-    if ($r['entry_type'] === 'annual') {
-        $r['expected_to_date'] = (float)$r['amount'] / 12 * $selMon;
-    } elseif ($r['entry_type'] === 'variable') {
-        $ytdSum = 0;
-        for ($m = 1; $m <= $selMon; $m++) $ytdSum += $mMap[$m] ?? 0;
-        $r['expected_to_date'] = $ytdSum;
-    } else {
-        $r['expected_to_date'] = (float)$r['amount'] * $selMon;
-    }
-
-    if ($r['cat_type'] === 'income') $incomeCats[]  = $r;
-    else                             $expenseCats[]  = $r;
-}
-
-// Compute actuals
-// Splits store parent in category_id and child in subcategory_id, so we group
-// by the effective leaf (COALESCE) and fall back to category_id for parent-level budgets.
-function fetchActuals(PDO $db, array $acctIds, array $cats, string $start, string $end): array {
-    if (empty($acctIds) || empty($cats)) return [];
-    $catIds  = array_column($cats, 'category_id');
-    $catSet  = array_flip($catIds);
-    $aPhs    = implode(',', array_fill(0, count($acctIds), '?'));
-    $cPhs    = implode(',', array_fill(0, count($catIds), '?'));
-    $stmt    = $db->prepare(
-        "SELECT ts.category_id,
-                COALESCE(ts.subcategory_id, ts.category_id) AS eff_cat_id,
-                SUM(ts.amount) AS total
-         FROM transaction_splits ts
-         JOIN transactions t ON t.id = ts.transaction_id
-         WHERE t.transaction_date BETWEEN ? AND ?
-           AND t.account_id IN ($aPhs)
-           AND (ts.category_id IN ($cPhs) OR ts.subcategory_id IN ($cPhs))
-         GROUP BY ts.category_id, COALESCE(ts.subcategory_id, ts.category_id)"
-    );
-    $stmt->execute([$start, $end, ...$acctIds, ...$catIds, ...$catIds]);
-    $map = [];
-    foreach ($stmt->fetchAll() as $r) {
-        $eid = (int)$r['eff_cat_id'];
-        $cid = (int)$r['category_id'];
-        // Prefer the leaf category if it is in the budget; otherwise credit the parent.
-        $key = isset($catSet[$eid]) ? $eid : (isset($catSet[$cid]) ? $cid : null);
-        if ($key !== null) {
-            $map[$key] = ($map[$key] ?? 0.0) + (float)$r['total'];
-        }
-    }
-    return $map;
-}
-
-// ── Annual-compliance metrics (shared by HTML render + CSV export) ─────
-// Pace = how far through the year we are (by elapsed months), compared against
-// how much of the annual budget has actually been used/earned to date.
-function budgetBarClass(?float $rawPct, bool $isIncome): string {
-    if ($rawPct === null) return 'bar-none';
-    if ($isIncome) return $rawPct >= 100 ? 'bar-ok' : ($rawPct >= 80 ? 'bar-warn' : 'bar-over');
-    return $rawPct > 100 ? 'bar-over' : ($rawPct >= 80 ? 'bar-warn' : 'bar-ok');
-}
-
-function computeBudgetRow(array $c, float $monActual, float $ytdActual, bool $isIncome, int $selMon): array {
-    $monBudget    = (float)$c['mon_budget'];
-    $annualBudget = (float)$c['annual_budget'];
-    $expected     = (float)$c['expected_to_date'];
-
-    $monDiff         = round($isIncome ? ($monActual - $monBudget) : ($monBudget - $monActual), MONEY_DECIMALS);
-    $annualRemaining = round($annualBudget - $ytdActual, MONEY_DECIMALS);
-
-    $pctYearElapsed = $selMon / 12 * 100;
-    $pctAnnualUsed  = $annualBudget > 0 ? ($ytdActual / $annualBudget * 100) : null;
-
-    // Normalize so positive paceDiff always means "bad" regardless of income/expense.
-    $paceDiff = $pctAnnualUsed !== null
-        ? ($isIncome ? ($pctYearElapsed - $pctAnnualUsed) : ($pctAnnualUsed - $pctYearElapsed))
-        : null;
-
-    if ($paceDiff === null) {
-        $paceLabel = null; $paceCls = 'bv-pace-none';
-    } elseif ($paceDiff > 15) {
-        $paceLabel = $isIncome ? 'Behind Pace' : 'Over Pace';    $paceCls = 'bv-pace-bad';
-    } elseif ($paceDiff > 5) {
-        $paceLabel = $isIncome ? 'Slightly Behind' : 'Slightly Over'; $paceCls = 'bv-pace-warn';
-    } else {
-        $paceLabel = 'On Track'; $paceCls = 'bv-pace-good';
-    }
-
-    $monRawPct = $monBudget > 0 ? ($monActual / $monBudget * 100) : null;
-    $yrRawPct  = $annualBudget > 0 ? ($ytdActual / $annualBudget * 100) : null;
-
-    $yrBarCls = match ($paceCls) {
-        'bv-pace-bad'  => 'bar-over',
-        'bv-pace-warn' => 'bar-warn',
-        'bv-pace-good' => 'bar-ok',
-        default        => 'bar-none',
-    };
-
-    return [
-        'monBudget'       => $monBudget,
-        'annualBudget'    => $annualBudget,
-        'expected'        => $expected,
-        'monDiff'         => $monDiff,
-        'annualRemaining' => $annualRemaining,
-        'pctYearElapsed'  => $pctYearElapsed,
-        'pctAnnualUsed'   => $pctAnnualUsed,
-        'paceLabel'       => $paceLabel,
-        'paceCls'         => $paceCls,
-        'monRawPct'       => $monRawPct,
-        'monBarCls'       => budgetBarClass($monRawPct, $isIncome),
-        'yrRawPct'        => $yrRawPct,
-        'yrBarCls'        => $yrBarCls,
-    ];
-}
-
-$incomeMonActuals  = fetchActuals($db, $acctIds, $incomeCats,  $monStart, $monEnd);
-$incomeYtdActuals  = fetchActuals($db, $acctIds, $incomeCats,  $ytdStart, $ytdEnd);
-$expenseMonActuals = fetchActuals($db, $acctIds, $expenseCats, $monStart, $monEnd);
-$expenseYtdActuals = fetchActuals($db, $acctIds, $expenseCats, $ytdStart, $ytdEnd);
-
-// Non-budgeted actuals: categories with transactions not in this budget
-$nbIncome = $nbExpense = [];
-if (!empty($acctIds)) {
-    $budgetedCatIds = array_merge(
-        array_column($incomeCats,  'category_id'),
-        array_column($expenseCats, 'category_id')
-    );
-    $aPhs = implode(',', array_fill(0, count($acctIds), '?'));
-    $excludeClause  = '';
-    $excludeParams  = [];
-    if (!empty($budgetedCatIds)) {
-        $cPhs          = implode(',', array_fill(0, count($budgetedCatIds), '?'));
-        $excludeClause = "AND ts.category_id NOT IN ($cPhs)";
-        $excludeParams = $budgetedCatIds;
-    }
-    $nbStmt = $db->prepare(
-        "SELECT ts.category_id, c.name, c.type AS cat_type, c.parent_id, p.name AS parent_name,
-                SUM(CASE WHEN t.transaction_date BETWEEN ? AND ? THEN ts.amount ELSE 0 END) AS mon_actual,
-                SUM(ts.amount) AS ytd_actual
-         FROM transaction_splits ts
-         JOIN transactions t ON t.id = ts.transaction_id
-         JOIN categories c ON c.id = ts.category_id
-         LEFT JOIN categories p ON p.id = c.parent_id
-         WHERE t.transaction_date BETWEEN ? AND ?
-           AND t.account_id IN ($aPhs)
-           $excludeClause
-           AND c.type IN ('income','expense')
-           AND c.name != '--Split--'
-         GROUP BY ts.category_id, c.name, c.type, c.parent_id, p.name
-         HAVING ytd_actual != 0
-         ORDER BY c.type, COALESCE(p.name, c.name), c.name"
-    );
-    $nbStmt->execute([$monStart, $monEnd, $ytdStart, $ytdEnd, ...$acctIds, ...$excludeParams]);
-    foreach ($nbStmt->fetchAll() as $r) {
-        $r['display_name'] = $r['parent_name'] ? $r['parent_name'] . ': ' . $r['name'] : $r['name'];
-        if ($r['cat_type'] === 'income') $nbIncome[] = $r;
-        else                             $nbExpense[] = $r;
-    }
-}
-
-// Investment income (div/int/reinvest_div/reinvest_cap) — these never get
-// transaction_splits rows (see reports/investment_income.php), so they're
-// invisible to the actuals queries above. Mirrors that report's amount
-// formula: cash div/int use abs(transactions.amount); reinvested activity
-// uses quantity*price instead, since transactions.amount's sign isn't a
-// reliable indicator of magnitude for reinvest_div/reinvest_cap.
-$nbInvIncome = [];
-if ($showInvIncome && !empty($acctIds)) {
-    $aPhs = implode(',', array_fill(0, count($acctIds), '?'));
-    $invStmt = $db->prepare(
-        "SELECT t.transaction_date AS date, it.activity, it.quantity, it.price, t.amount
-         FROM investment_transactions it
-         JOIN transactions t ON t.id = it.transaction_id
-         WHERE it.activity IN ('div','int','reinvest_div','reinvest_cap')
-           AND t.transaction_date BETWEEN ? AND ?
-           AND t.account_id IN ($aPhs)"
-    );
-    $invStmt->execute([$ytdStart, $ytdEnd, ...$acctIds]);
-    $invTotals = [];
-    foreach ($invStmt->fetchAll() as $r) {
-        $amt = in_array($r['activity'], ['div', 'int'], true)
-            ? abs((float)$r['amount'])
-            : (float)$r['quantity'] * (float)$r['price'];
-        $act = $r['activity'];
-        if (!isset($invTotals[$act])) $invTotals[$act] = ['mon' => 0.0, 'ytd' => 0.0];
-        $invTotals[$act]['ytd'] += $amt;
-        if ($r['date'] >= $monStart && $r['date'] <= $monEnd) $invTotals[$act]['mon'] += $amt;
-    }
-    foreach ($invTotals as $act => $t) {
-        if ($t['ytd'] == 0.0) continue;
-        $nbInvIncome[] = [
-            'display_name' => investmentActivityLabel($act),
-            'mon_actual'   => $t['mon'],
-            'ytd_actual'   => $t['ytd'],
-        ];
-    }
-    usort($nbInvIncome, fn($a, $b) => $b['ytd_actual'] <=> $a['ytd_actual']);
-}
+// All budget math (targets, signed actuals, pacing, untracked) lives in _lib.php
+$model = loadBudgetModel($budgetId, $selYear, $selMon, ['with_inv_income' => $showInvIncome]);
+$acctIds     = $model['acct_ids'];
+$incomeCats  = $model['income'];
+$expenseCats = $model['expense'];
+$nbIncome    = $model['untracked']['income'];
+$nbExpense   = $model['untracked']['expense'];
+$nbInvIncome = $model['inv_income'];
 
 $monthName = date('F Y', strtotime($monStart));
 
 // ── CSV Export ─────────────────────────────────────────────────
-function csvSectionRows(array $cats, array $monActuals, array $ytdActuals, bool $isIncome, string $sectionLabel, int $selMon): array {
+function csvSectionRows(array $cats, array $tot, string $sectionLabel): array {
     $rows = [];
-    $totMonBudget = 0; $totMonActual = 0; $totAnnualBudget = 0; $totYtdActual = 0; $totExpected = 0;
-    foreach ($cats as $c) {
-        $cid       = (int)$c['category_id'];
-        $monRaw    = $monActuals[$cid] ?? 0;
-        $ytdRaw    = $ytdActuals[$cid] ?? 0;
-        $monActual = $isIncome ? max(0, $monRaw) : abs(min(0, $monRaw));
-        $ytdActual = $isIncome ? max(0, $ytdRaw) : abs(min(0, $ytdRaw));
-        $row       = computeBudgetRow($c, $monActual, $ytdActual, $isIncome, $selMon);
+    $fmt  = fn($v) => number_format($v, 2, '.', '');
+    foreach ([...$cats, null] as $c) {
+        $src = $c ?? $tot;
+        $row = $src['metrics'];
         $rows[] = [
-            $sectionLabel, $c['display_name'],
-            number_format($row['monBudget'],       2, '.', ''),
-            number_format($monActual,              2, '.', ''),
-            number_format($row['monDiff'],         2, '.', ''),
-            number_format($row['annualBudget'],    2, '.', ''),
-            number_format($ytdActual,              2, '.', ''),
+            $sectionLabel, $c ? $c['display_name'] : 'Total',
+            $fmt($row['monBudget']),
+            $fmt($src['mon_actual']),
+            $fmt($row['monDiff']),
+            $fmt($row['annualBudget']),
+            $fmt($src['ytd_actual']),
             $row['pctAnnualUsed'] !== null ? round($row['pctAnnualUsed'], 1) . '%' : '',
-            number_format($row['expected'],        2, '.', ''),
+            $fmt($row['expected']),
             $row['paceLabel'] ?? '',
-            number_format($row['annualRemaining'], 2, '.', ''),
+            $fmt($row['annualRemaining']),
         ];
-        $totMonBudget    += $row['monBudget'];    $totMonActual += $monActual;
-        $totAnnualBudget += $row['annualBudget']; $totYtdActual += $ytdActual;
-        $totExpected     += $row['expected'];
     }
-    $totMonDiff  = round($isIncome ? $totMonActual - $totMonBudget : $totMonBudget - $totMonActual, MONEY_DECIMALS);
-    $totRow      = computeBudgetRow(
-        ['mon_budget' => $totMonBudget, 'annual_budget' => $totAnnualBudget, 'expected_to_date' => $totExpected],
-        $totMonActual, $totYtdActual, $isIncome, $selMon
-    );
-    $rows[] = [
-        $sectionLabel, 'Total',
-        number_format($totMonBudget,       2, '.', ''),
-        number_format($totMonActual,       2, '.', ''),
-        number_format($totMonDiff,         2, '.', ''),
-        number_format($totAnnualBudget,    2, '.', ''),
-        number_format($totYtdActual,       2, '.', ''),
-        $totRow['pctAnnualUsed'] !== null ? round($totRow['pctAnnualUsed'], 1) . '%' : '',
-        number_format($totRow['expected'], 2, '.', ''),
-        $totRow['paceLabel'] ?? '',
-        number_format($totRow['annualRemaining'], 2, '.', ''),
-    ];
     return $rows;
 }
 
 if (($_GET['export'] ?? '') === 'csv') {
     $csvRows = [];
-    if (!empty($incomeCats))  $csvRows = array_merge($csvRows, csvSectionRows($incomeCats,  $incomeMonActuals,  $incomeYtdActuals,  true,  'Income',  $selMon));
-    if (!empty($expenseCats)) $csvRows = array_merge($csvRows, csvSectionRows($expenseCats, $expenseMonActuals, $expenseYtdActuals, false, 'Expense', $selMon));
+    if (!empty($incomeCats))  $csvRows = array_merge($csvRows, csvSectionRows($incomeCats,  $model['totals']['income'],  'Income'));
+    if (!empty($expenseCats)) $csvRows = array_merge($csvRows, csvSectionRows($expenseCats, $model['totals']['expense'], 'Expense'));
     $slug = preg_replace('/[^A-Za-z0-9_-]+/', '_', $budget['name']);
     outputCsv(
         'budget_' . $slug . '_' . $monStart . '.csv',
@@ -379,16 +115,15 @@ function renderNonBudgetedSection(array $nbIncome, array $nbExpense, array $nbIn
     </thead>
     <tbody>
     <?php foreach ($cats as $c):
-        $monRaw = (float)$c['mon_actual'];
-        $ytdRaw = (float)$c['ytd_actual'];
-        $monAmt = $isIncome ? max(0, $monRaw)      : abs(min(0, $monRaw));
-        $ytdAmt = $isIncome ? max(0, $ytdRaw)      : abs(min(0, $ytdRaw));
+        // Signed in the section's direction: net refunds show negative
+        $monAmt = (float)$c['mon_actual'];
+        $ytdAmt = (float)$c['ytd_actual'];
         if ($monAmt == 0 && $ytdAmt == 0) continue;
     ?>
     <tr>
       <td><?= h($c['display_name']) ?></td>
-      <td class="text-end"><?= $monAmt > 0 ? formatMoney($monAmt) : '<span class="text-muted">—</span>' ?></td>
-      <td class="text-end"><?= $ytdAmt > 0 ? formatMoney($ytdAmt) : '<span class="text-muted">—</span>' ?></td>
+      <td class="text-end"><?= $monAmt != 0 ? budgetMoney($monAmt) : '<span class="text-muted">—</span>' ?></td>
+      <td class="text-end"><?= $ytdAmt != 0 ? budgetMoney($ytdAmt) : '<span class="text-muted">—</span>' ?></td>
     </tr>
     <?php endforeach; ?>
     </tbody>
@@ -403,21 +138,22 @@ $currentPage = 'budget';
 include __DIR__ . '/../includes/header.php';
 
 // Renders one bar cell: fill + caption, optionally with a pace-marker tick and status line.
+// $pctExpected places the marker at the scheduled expected-to-date share of the annual budget.
 function renderBarCell(float $actual, float $target, ?float $rawPct, string $barCls, string $captionSuffix,
-                        ?float $pctYearElapsed = null, ?string $paceLabel = null, string $paceCls = ''): void {
-    $fillWidth = $rawPct !== null ? min($rawPct, 100) : 0;
+                        ?float $pctExpected = null, ?string $paceLabel = null, string $paceCls = ''): void {
+    $fillWidth = $rawPct !== null ? max(0, min($rawPct, 100)) : 0;
     ?>
     <div class="budget-bar-track">
       <div class="budget-bar-fill <?= $barCls ?>" style="width:<?= round($fillWidth, 1) ?>%"></div>
-      <?php if ($pctYearElapsed !== null && $target > 0): ?>
-      <div class="budget-bar-pace" style="left:<?= round(min($pctYearElapsed, 100), 1) ?>%" title="Pace marker: <?= round($pctYearElapsed) ?>% of the year elapsed"></div>
+      <?php if ($pctExpected !== null && $target > 0): ?>
+      <div class="budget-bar-pace" style="left:<?= round(min($pctExpected, 100), 1) ?>%" title="Pace marker: <?= round($pctExpected) ?>% of the annual budget expected by now"></div>
       <?php endif; ?>
     </div>
     <div class="bv-cell-caption">
       <?php if ($target > 0): ?>
-      <?= formatMoney($actual) ?> of <?= formatMoney($target) ?><?= $captionSuffix ?>
-      <?php elseif ($actual > 0): ?>
-      <?= formatMoney($actual) ?>
+      <?= budgetMoney($actual) ?> of <?= formatMoney($target) ?><?= $captionSuffix ?>
+      <?php elseif ($actual != 0): ?>
+      <?= budgetMoney($actual) ?>
       <?php else: ?>
       <span class="text-muted">—</span>
       <?php endif; ?>
@@ -429,32 +165,19 @@ function renderBarCell(float $actual, float $target, ?float $rawPct, string $bar
 }
 
 // Helper to render a section
-function renderBudgetSection(
-    string $title, string $icon, array $cats,
-    array $monActuals, array $ytdActuals,
-    bool $isIncome, int $selMon
-): void {
-    $totMonBudget = array_sum(array_column($cats, 'mon_budget'));
-    $totAnnualBudget = array_sum(array_column($cats, 'annual_budget'));
-    $totExpected  = array_sum(array_column($cats, 'expected_to_date'));
-    $totMonActual = 0; $totYtdActual = 0;
-    foreach ($cats as $c) {
-        $raw = $monActuals[(int)$c['category_id']] ?? 0;
-        $totMonActual += $isIncome ? max(0, $raw) : abs(min(0, $raw));
-        $raw = $ytdActuals[(int)$c['category_id']] ?? 0;
-        $totYtdActual += $isIncome ? max(0, $raw) : abs(min(0, $raw));
-    }
-    $totRow = computeBudgetRow(
-        ['mon_budget' => $totMonBudget, 'annual_budget' => $totAnnualBudget, 'expected_to_date' => $totExpected],
-        $totMonActual, $totYtdActual, $isIncome, $selMon
-    );
+function renderBudgetSection(string $title, string $icon, array $cats, array $tot, bool $isIncome): void {
+    $totMonBudget    = $tot['mon_budget'];
+    $totAnnualBudget = $tot['annual_budget'];
+    $totMonActual    = $tot['mon_actual'];
+    $totYtdActual    = $tot['ytd_actual'];
+    $totRow          = $tot['metrics'];
     ?>
 <div class="bv-section">
   <div class="bv-section-header">
     <span><i class="bi <?= $icon ?>"></i> <?= $title ?></span>
     <span class="bv-section-totals">
-      <span class="text-muted small me-3">This month: <strong><?= formatMoney($totMonActual) ?></strong> / <?= formatMoney($totMonBudget) ?></span>
-      <span class="text-muted small">This year: <strong><?= formatMoney($totYtdActual) ?></strong> / <?= formatMoney($totAnnualBudget) ?><?= $totRow['pctAnnualUsed'] !== null ? ' (' . round($totRow['pctAnnualUsed']) . '% used)' : '' ?></span>
+      <span class="text-muted small me-3">This month: <strong><?= budgetMoney($totMonActual) ?></strong> / <?= formatMoney($totMonBudget) ?></span>
+      <span class="text-muted small">This year: <strong><?= budgetMoney($totYtdActual) ?></strong> / <?= formatMoney($totAnnualBudget) ?><?= $totRow['pctAnnualUsed'] !== null ? ' (' . round($totRow['pctAnnualUsed']) . '% used)' : '' ?></span>
     </span>
   </div>
   <table class="table table-sm report-table bv-table">
@@ -468,12 +191,9 @@ function renderBudgetSection(
     </thead>
     <tbody>
     <?php foreach ($cats as $c):
-        $cid       = (int)$c['category_id'];
-        $monRaw    = $monActuals[$cid] ?? 0;
-        $ytdRaw    = $ytdActuals[$cid] ?? 0;
-        $monActual = $isIncome ? max(0, $monRaw) : abs(min(0, $monRaw));
-        $ytdActual = $isIncome ? max(0, $ytdRaw) : abs(min(0, $ytdRaw));
-        $row       = computeBudgetRow($c, $monActual, $ytdActual, $isIncome, $selMon);
+        $monActual = $c['mon_actual'];
+        $ytdActual = $c['ytd_actual'];
+        $row       = $c['metrics'];
         $monSuffix = $row['monBudget'] > 0
             ? ($row['monDiff'] < 0
                 ? ' <span class="text-danger">(' . formatMoney(abs($row['monDiff'])) . ($isIncome ? ' short' : ' over') . ')</span>'
@@ -484,7 +204,7 @@ function renderBudgetSection(
     <tr>
       <td><?= h($c['display_name']) ?>
         <?php if ($c['entry_type'] === 'annual'): ?>
-        <span class="badge bg-secondary ms-1" style="font-size:.6rem">Annual</span>
+        <span class="badge bg-secondary ms-1" style="font-size:.6rem"<?= $c['due_months'] ? '' : ' title="No due months: no monthly target, paced evenly over the year"' ?>>Annual<?= $c['due_months'] ? ' · ' . h(implode(', ', array_map(fn($m) => date('M', mktime(0, 0, 0, $m, 1)), $c['due_months']))) : '' ?></span>
         <?php elseif ($c['entry_type'] === 'variable'): ?>
         <span class="badge bg-info text-dark ms-1" style="font-size:.6rem">Variable</span>
         <?php endif; ?>
@@ -497,7 +217,7 @@ function renderBudgetSection(
           $yrSuffix = $row['annualBudget'] > 0 && $row['pctAnnualUsed'] !== null
               ? ' (' . round($row['pctAnnualUsed']) . '% used)' : '';
           renderBarCell($ytdActual, $row['annualBudget'], $row['yrRawPct'], $row['yrBarCls'], $yrSuffix,
-                        $row['pctYearElapsed'], $row['paceLabel'], $row['paceCls']);
+                        $row['pctExpected'], $row['paceLabel'], $row['paceCls']);
         ?>
       </td>
       <td class="text-end <?= ($isIncome ? $remaining > 0 : $remaining < 0) ? 'amount-debit' : '' ?>">
@@ -533,7 +253,7 @@ function renderBudgetSection(
             $totYrSuffix = $totAnnualBudget > 0 && $totRow['pctAnnualUsed'] !== null
                 ? ' (' . round($totRow['pctAnnualUsed']) . '% used)' : '';
             renderBarCell($totYtdActual, $totAnnualBudget, $totRow['yrRawPct'], $totRow['yrBarCls'], $totYrSuffix,
-                          $totRow['pctYearElapsed'], $totRow['paceLabel'], $totRow['paceCls']);
+                          $totRow['pctExpected'], $totRow['paceLabel'], $totRow['paceCls']);
           ?>
         </td>
         <td class="text-end <?= ($isIncome ? $totRow['annualRemaining'] > 0 : $totRow['annualRemaining'] < 0) ? 'amount-debit' : '' ?>">
@@ -620,11 +340,11 @@ function renderBudgetSection(
 <div class="bv-period-heading"><?= h($monthName) ?> · Year-to-date through <?= date('F', mktime(0,0,0,$selMon,1)) ?> <?= $selYear ?> (<?= round($selMon / 12 * 100) ?>% of year elapsed)</div>
 
 <?php if (!empty($incomeCats)): ?>
-<?php renderBudgetSection('Income', 'bi-arrow-down-circle', $incomeCats, $incomeMonActuals, $incomeYtdActuals, true, $selMon); ?>
+<?php renderBudgetSection('Income', 'bi-arrow-down-circle', $incomeCats, $model['totals']['income'], true); ?>
 <?php endif; ?>
 
 <?php if (!empty($expenseCats)): ?>
-<?php renderBudgetSection('Expenses', 'bi-arrow-up-circle', $expenseCats, $expenseMonActuals, $expenseYtdActuals, false, $selMon); ?>
+<?php renderBudgetSection('Expenses', 'bi-arrow-up-circle', $expenseCats, $model['totals']['expense'], false); ?>
 <?php endif; ?>
 
 <?php renderNonBudgetedSection($nbIncome, $nbExpense, $nbInvIncome); ?>

@@ -30,6 +30,7 @@ function renderCatRow(array $cat, array $selCats, array $monthNames, bool $isChi
     $type    = $sel['type']      ?? 'monthly';
     $amount  = $sel['amount']    ?? 0;
     $months  = $sel['months']    ?? [];
+    $due     = $sel['due']       ?? [];
     $dash    = $sel['dashboard'] ?? 0;
     $isVar   = $type === 'variable';
     $hist    = $histSpend[$cid] ?? null;
@@ -75,6 +76,13 @@ function renderCatRow(array $cat, array $selCats, array $monthNames, bool $isChi
         </div>
       </div>
       <span class="wiz-equiv-hint text-muted small"></span>
+      <div class="wiz-due-months <?= $type === 'annual' ? '' : 'd-none' ?>" title="Months the annual amount is due. It is split evenly across them for monthly targets and pacing. Leave all off for no monthly target (paced evenly over the year).">
+        <span class="small text-muted me-1">Due:</span>
+        <?php foreach ($monthNames as $mi => $mLabel): $mn = $mi + 1; ?>
+        <label class="wiz-due-month" title="<?= h($mLabel) ?>"><input type="checkbox" name="cats[<?= $cid ?>][due][]" value="<?= $mn ?>"
+               <?= in_array($mn, $due, true) ? 'checked' : '' ?> <?= $dis ?>><span><?= h(substr($mLabel, 0, 1)) ?></span></label>
+        <?php endforeach; ?>
+      </div>
       <label class="wiz-dash-label" title="Show this category on the dashboard budget widget">
         <input type="checkbox" class="wiz-dash-check" name="cats[<?= $cid ?>][dashboard]" value="1"
                <?= $dash ? 'checked' : '' ?> <?= $dis ?>>
