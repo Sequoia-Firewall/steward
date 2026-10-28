@@ -839,17 +839,42 @@ pre code {
 
     <h3>Viewing Progress</h3>
     <p>
-      Open a budget to see each category's progress toward its target, with two bars per row:
+      Open a budget to see where the year stands. Use the <i class="bi bi-chevron-left"></i> /
+      <i class="bi bi-chevron-right"></i> arrows beside the month to step through months (they
+      wrap from December into January of the next year and back).
     </p>
     <ul>
-      <li><strong>This Month</strong> — actual spending/income so far this month vs. the monthly target. For a <strong>Rollover</strong> line the target includes what carried over from earlier months, shown underneath (e.g. <em>$300 budget + $120 rolled over</em>). Budget vs. Actual always compares with the plain monthly target.</li>
-      <li><strong>This Year</strong> — year-to-date actual vs. the full annual budget (all 12 months summed), with a dark <strong>pace marker</strong> at the share of the annual budget the line's schedule expects by now: its monthly targets through the selected month (so an annual line due in September jumps there in September), or an even share of the year for an annual line without due months. Filled portion past the marker means spending is ahead of pace (or, for income, earning is behind pace).</li>
+      <li><strong>Tiles</strong> — income, expenses and net year to date, each compared with the plan to date, plus the <strong>projected year end</strong>: actuals through the selected month, then each later month's budget. Viewing the current month, the rest of the month and each later month count at least the scheduled bills and deposits for that category. An annual line without due months spreads whatever is left of its amount over the remaining months.</li>
+      <li><strong>Charts</strong> — <em>Cumulative</em> (budget, actual, projected and last year from January), <em>By Month</em>, <em>Variances</em> (the lines furthest from plan to date: red is overspent or under-earned, green the reverse) and <em>By Group</em> (a donut of year-to-date amounts by parent category). Pick <em>Expenses</em>, <em>Income</em> or <em>Net</em> for the data; your chart and series choice is remembered.</li>
+      <li><strong>Table</strong> — lines are grouped under their parent category with a subtotal row; click a group row to collapse it, or use the collapse/expand-all buttons. Each line shows:
+        <ul>
+          <li><strong>This Month</strong> — actual vs. the monthly target. For a <strong>Rollover</strong> line the target includes what carried over from earlier months, shown underneath (e.g. <em>$300 budget + $120 rolled over</em>). Budget vs. Actual always compares with the plain monthly target.</li>
+          <li><strong>This Year</strong> — year-to-date actual vs. the full annual budget, with a dark <strong>pace marker</strong> at the share of the annual budget the line's schedule expects by now: its monthly targets through the selected month (so an annual line due in September jumps there in September), or an even share of the year for an annual line without due months. Past 100% the bar shows the whole amount, with the part beyond the budget striped. A pace status (<span style="color:var(--green)">On Track</span>, Slightly Over/Behind, or <span style="color:#dc3545">Over/Behind Pace</span>) appears underneath.</li>
+          <li><strong>Trend</strong> — a 12-month sparkline: bars for each month's actual (red when past that month's target) and a dashed line for the targets (wide screens only).</li>
+          <li><strong>Last Year</strong> — the same months of last year and the change since.</li>
+          <li><strong>Annual Remaining</strong> — budget left to spend (expenses) or still to earn (income) this year.</li>
+        </ul>
+      </li>
+      <li><strong>Filter</strong> the lines to <em>Over</em> (ahead of plan to date), <em>Under</em> (at or behind plan) or <em>Unspent</em> (no activity this year), and <strong>sort</strong> by name, % of annual used, variance vs. plan, YTD actual, annual remaining or last year. The sort is remembered for your login. A legend under the table explains the bar colors.</li>
+      <li><strong>Click a line</strong> to open its details: key figures, a cumulative chart, a month-by-month table (later months show the projection) and every transaction counted toward it this year, each linking to its register. If you can manage budgets, you can change the line's amount, due months, rollover or monthly amounts right there; the page reloads with the new numbers. The entry type is changed in the full editor.</li>
+      <li><strong>Print</strong> prints the tiles, charts (use the chart toggle next to it to leave them out) and every line, with groups expanded and filters ignored.</li>
     </ul>
     <p>
       Actuals are net amounts: refunds count against spending, so a month where refunds
       outweigh purchases shows a negative amount rather than $0. A transaction counts toward
       the budget line for its subcategory, or its parent category when only the parent is
       budgeted. <strong>Untracked Activity</strong> lists only what no budget line covers.
+    </p>
+    <p>
+      Click <strong>CSV</strong> in the filter bar to export the current budget/month view —
+      income and expense lines with this-month budget, rolled-over amount, actual, annual budget,
+      % used, expected-to-date, pace status, remaining and last year's same period, followed by
+      the untracked rows (and investment income when <em>Show Investment Income</em> is on).
+    </p>
+    <p>
+      The <strong>Budget vs. Actual</strong> report (under Reports) shows a simpler one-month
+      comparison, with income and expense lines in separate tables, tiles and CSV sections
+      plus a net line. The Budgets page card shows this month's spending on expense lines.
     </p>
     <h3>Budget Alerts</h3>
     <p>
@@ -866,22 +891,6 @@ pre code {
     <p>
       The dashboard Budget widget lists the dashboard budget's top three alerts, for every
       line in the budget (not only the ones shown on the widget), with a link to the rest.
-    </p>
-    <p>
-      Each row also shows a pace status (<span style="color:var(--green)">On Track</span>,
-      Slightly Over/Behind, or <span style="color:#dc3545">Over/Behind Pace</span>) and an
-      <strong>Annual Remaining</strong> column — how much budget is left to spend (expenses) or
-      how much more is needed to reach the target (income) for the rest of the year.
-    </p>
-    <p>
-      The <strong>Budget vs. Actual</strong> report (under Reports) shows a simpler one-month
-      comparison, with income and expense lines in separate tables, tiles and CSV sections
-      plus a net line. The Budgets page card shows this month's spending on expense lines.
-    </p>
-    <p>
-      Click <strong>CSV</strong> in the filter bar to export the current budget/month view —
-      Income and Expense categories with this-month and annual budget, actual, % used, pace
-      status, and remaining figures.
     </p>
 
     <!-- ════════════════════════════════════════════════════ -->

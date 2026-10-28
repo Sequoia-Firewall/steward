@@ -162,11 +162,59 @@ function budgetScheduledByCategory(array $acctIds, int $year, string $fromDate):
 }
 
 /**
+ * Which line a split belongs to: its leaf category (subcategory, else
+ * category), else the leaf's parent, else the split's own category; null when
+ * none is budgeted (untracked). $lineByCat maps category_id → line key.
+ */
+function budgetLineForSplit(array $lineByCat, int $categoryId, int $leafId, ?int $leafParent) {
+    return $lineByCat[$leafId]
+        ?? ($leafParent !== null ? ($lineByCat[$leafParent] ?? null) : null)
+        ?? $lineByCat[$categoryId]
+        ?? null;
+}
+
+/**
+ * Raw signed split totals for $year in the given accounts:
+ * [line key → [month → sum], untracked ts.category_id → [month → sum]].
+ */
+function budgetSplitTotals(array $acctIds, array $lineByCat, int $year): array {
+    $actuals = []; $untracked = [];
+    if (!$acctIds) return [$actuals, $untracked];
+    $aPhs = implode(',', array_fill(0, count($acctIds), '?'));
+    $stmt = getDB()->prepare(
+        "SELECT ts.category_id, COALESCE(ts.subcategory_id, ts.category_id) AS leaf_id,
+                lc.parent_id AS leaf_parent, MONTH(t.transaction_date) AS m, SUM(ts.amount) AS total
+         FROM transaction_splits ts
+         JOIN transactions t ON t.id = ts.transaction_id
+         LEFT JOIN categories lc ON lc.id = COALESCE(ts.subcategory_id, ts.category_id)
+         WHERE t.transaction_date BETWEEN ? AND ?
+           AND t.account_id IN ($aPhs)
+           AND ts.category_id IS NOT NULL
+         GROUP BY ts.category_id, leaf_id, lc.parent_id, m"
+    );
+    $stmt->execute([sprintf('%04d-01-01', $year), sprintf('%04d-12-31', $year), ...$acctIds]);
+    foreach ($stmt->fetchAll() as $s) {
+        $m    = (int)$s['m'];
+        $line = budgetLineForSplit($lineByCat, (int)$s['category_id'], (int)$s['leaf_id'],
+                                   $s['leaf_parent'] !== null ? (int)$s['leaf_parent'] : null);
+        if ($line !== null) {
+            $actuals[$line][$m] = ($actuals[$line][$m] ?? 0.0) + (float)$s['total'];
+        } else {
+            $cid = (int)$s['category_id'];
+            $untracked[$cid][$m] = ($untracked[$cid][$m] ?? 0.0) + (float)$s['total'];
+        }
+    }
+    return [$actuals, $untracked];
+}
+
+/**
  * The full budget model for $year, measured through $month.
  *
  * Options:
  *   with_untracked  (bool, default true)  — untracked activity rows
  *   with_inv_income (bool, default false) — investment income rows (div/int/reinvest)
+ *   with_last_year  (bool, default false) — ly_actuals / ly_ytd per line (same
+ *                   lines and accounts, previous calendar year)
  *   today           (string Y-m-d)        — for tests; defaults to today
  *
  * Returns null when the budget doesn't exist, else:
@@ -177,7 +225,7 @@ function budgetScheduledByCategory(array $acctIds, int $year, string $fromDate):
  * Each line: bc_id, category_id, name, display_name, parent_id, parent_name,
  *   cat_type, is_income, entry_type, amount, due_months, rollover,
  *   show_on_dashboard, targets[1..12], actuals[1..12], scheduled[1..12],
- *   projected[1..12], mon_budget, carry_in, mon_available, annual_budget,
+ *   projected[1..12], ly_actuals[1..12], ly_ytd, mon_budget, carry_in, mon_available, annual_budget,
  *   expected_to_date, mon_actual, ytd_actual, projected_total,
  *   metrics (computeBudgetRow(), measured against mon_available), alert.
  * `alerts` lists the lines with an alert, most severe first (budgetLineAlert()).
@@ -188,6 +236,7 @@ function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = [])
     $today = $opts['today'] ?? date('Y-m-d');
     $withUntracked = $opts['with_untracked'] ?? true;
     $withInvIncome = $opts['with_inv_income'] ?? false;
+    $withLastYear  = $opts['with_last_year'] ?? false;
 
     $bStmt = $db->prepare("SELECT * FROM budgets WHERE id = ?");
     $bStmt->execute([$budgetId]);
@@ -224,44 +273,12 @@ function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = [])
         }
     }
 
-    // ── Actuals and untracked activity, one pass over the year's splits ──
-    // A split counts toward the line for its leaf category (subcategory, else
-    // category), else the leaf's parent, else the split's own category. A split
-    // matching none of the budget's categories is untracked.
+    // ── Actuals and untracked activity (budgetSplitTotals()) ──
     $lineByCat = [];
     foreach ($rows as $i => $r) $lineByCat[(int)$r['category_id']] = $i;
-    $actuals   = [];                      // line index → [month → raw signed sum]
-    $untracked = [];                      // ts.category_id → [month → raw signed sum]
-    $yearStart = sprintf('%04d-01-01', $year);
-    $yearEnd   = sprintf('%04d-12-31', $year);
-    if ($acctIds) {
-        $aPhs = implode(',', array_fill(0, count($acctIds), '?'));
-        $sStmt = $db->prepare(
-            "SELECT ts.category_id, COALESCE(ts.subcategory_id, ts.category_id) AS leaf_id,
-                    lc.parent_id AS leaf_parent, MONTH(t.transaction_date) AS m, SUM(ts.amount) AS total
-             FROM transaction_splits ts
-             JOIN transactions t ON t.id = ts.transaction_id
-             LEFT JOIN categories lc ON lc.id = COALESCE(ts.subcategory_id, ts.category_id)
-             WHERE t.transaction_date BETWEEN ? AND ?
-               AND t.account_id IN ($aPhs)
-               AND ts.category_id IS NOT NULL
-             GROUP BY ts.category_id, leaf_id, lc.parent_id, m"
-        );
-        $sStmt->execute([$yearStart, $yearEnd, ...$acctIds]);
-        foreach ($sStmt->fetchAll() as $s) {
-            $m = (int)$s['m'];
-            $line = $lineByCat[(int)$s['leaf_id']]
-                 ?? ($s['leaf_parent'] !== null ? ($lineByCat[(int)$s['leaf_parent']] ?? null) : null)
-                 ?? $lineByCat[(int)$s['category_id']]
-                 ?? null;
-            if ($line !== null) {
-                $actuals[$line][$m] = ($actuals[$line][$m] ?? 0.0) + (float)$s['total'];
-            } elseif ($withUntracked) {
-                $cid = (int)$s['category_id'];
-                $untracked[$cid][$m] = ($untracked[$cid][$m] ?? 0.0) + (float)$s['total'];
-            }
-        }
-    }
+    [$actuals, $untracked] = budgetSplitTotals($acctIds, $lineByCat, $year);
+    if (!$withUntracked) $untracked = [];
+    $lyActuals = $withLastYear ? budgetSplitTotals($acctIds, $lineByCat, $year - 1)[0] : [];
 
     // ── Scheduled bills/deposits (projection floor, current month only) ──
     $isCurrentMonth = $year === (int)substr($today, 0, 4) && $month === (int)substr($today, 5, 2);
@@ -294,6 +311,8 @@ function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = [])
 
         $act = array_fill(1, 12, 0.0);
         foreach ($actuals[$i] ?? [] as $m => $v) $act[$m] = round($sign * $v, MONEY_DECIMALS);
+        $ly = array_fill(1, 12, 0.0);
+        foreach ($lyActuals[$i] ?? [] as $m => $v) $ly[$m] = round($sign * $v, MONEY_DECIMALS);
         $sched = array_fill(1, 12, 0.0);
         foreach ($schedByLine[$i] ?? [] as $m => $v) $sched[$m] = $v;
         $ytd = array_sum(array_slice($act, 0, $month, true));
@@ -340,6 +359,8 @@ function loadBudgetModel(int $budgetId, int $year, int $month, array $opts = [])
             'actuals'           => $act,
             'scheduled'         => $sched,
             'projected'         => $proj,
+            'ly_actuals'        => $ly,
+            'ly_ytd'            => array_sum(array_slice($ly, 0, $month, true)),
             'mon_budget'        => $targets[$month],
             'carry_in'          => $carry,
             'mon_available'     => $targets[$month] + $carry,
@@ -389,6 +410,7 @@ function budgetTotals(array $lines, bool $isIncome): array {
         'mon_actual'       => $sum('mon_actual'),
         'ytd_actual'       => $sum('ytd_actual'),
         'projected_total'  => $sum('projected_total'),
+        'ly_ytd'           => $sum('ly_ytd'),
     ];
     $t['metrics'] = computeBudgetRow(['mon_budget' => $t['mon_available']] + $t, $t['mon_actual'], $t['ytd_actual'], $isIncome);
     return $t;

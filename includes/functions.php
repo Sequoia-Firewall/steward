@@ -1772,6 +1772,8 @@ function getUserPref(int $userId, string $key, ?string $default = null): ?string
 const VIEW_PREF_PATTERNS = [
     'portfolio_show_unowned' => '/^[01]$/',
     'portfolio_sort'         => '/^[a-z_]{1,30}:(asc|desc)$/',   // column:direction
+    'budget_sort'            => '/^(name|used|variance|actual|remaining|last_year):(asc|desc)$/',
+    'budget_chart'           => '/^(cumulative|monthly|variance|groups):(expense|income|net)$/',   // tab:series
 ];
 
 function setUserPref(int $userId, string $key, ?string $value): void {
