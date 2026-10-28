@@ -1827,6 +1827,15 @@ function getUserPref(int $userId, string $key, ?string $default = null): ?string
     return $row !== false ? $row['pref_value'] : $default;
 }
 
+/**
+ * View preferences the browser may save through api/save_pref.php, as
+ * key => pattern the value must match. Any other key is rejected.
+ */
+const VIEW_PREF_PATTERNS = [
+    'portfolio_show_unowned' => '/^[01]$/',
+    'portfolio_sort'         => '/^[a-z_]{1,30}:(asc|desc)$/',   // column:direction
+];
+
 function setUserPref(int $userId, string $key, ?string $value): void {
     $db = getDB();
     if ($value === null) {

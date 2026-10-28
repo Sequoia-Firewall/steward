@@ -1035,3 +1035,116 @@ document.getElementById('appConfirmBtn').addEventListener('click', function () {
     });
   });
 })();
+
+// ── Report filters: apply pending changes before saving ────────
+// Save As, Add to Dashboard, Copy Link and the Custom Report Save button store
+// the URL the page was loaded with. When the filter form has changes that
+// weren't applied yet, reportPending.run() submits the form first and the
+// reloaded page picks the action back up via reportPending.resume().
+// Quick-range links inside the form carry the unapplied changes along.
+var reportPending = (function () {
+  const KEY       = 'steward.reportResume';
+  const MAX_AGE   = 120000;
+  const DATE_KEYS = ['dr', 'start', 'end', 'range', 'year', 'months', 'days', 'as_of'];
+  const forms = Array.from(document.querySelectorAll('form.report-filters, form#crForm'))
+    .filter(f => (f.getAttribute('method') || 'get').toLowerCase() === 'get');
+
+  function serialize(form) {
+    const p = new URLSearchParams();
+    new FormData(form).forEach((v, k) => { if (k !== 'export' && typeof v === 'string') p.append(k, v); });
+    return p;
+  }
+  const snapshots = new Map();
+  forms.forEach(form => {
+    snapshots.set(form, serialize(form).toString());
+    // Re-take the snapshot after load in case other scripts filled fields in late
+    let touched = false;
+    form.addEventListener('input',  () => { touched = true; }, true);
+    form.addEventListener('change', () => { touched = true; }, true);
+    window.addEventListener('load', () => { if (!touched) snapshots.set(form, serialize(form).toString()); });
+    form.addEventListener('click', e => onQuickRange(form, e));
+  });
+
+  function isFormDirty(form) { return serialize(form).toString() !== snapshots.get(form); }
+  function dirtyForm() { return forms.find(isFormDirty) || null; }
+
+  // Returns true when it took over (a filter form is being submitted); the
+  // caller should stop. Returns false when there is nothing pending.
+  function run(action, data) {
+    const form = dirtyForm();
+    if (!form) return false;
+    try {
+      sessionStorage.setItem(KEY, JSON.stringify({ action, data: data || {}, path: location.pathname, t: Date.now() }));
+    } catch (e) {
+      showToast('Click Apply to update the report first.', 'warning', { autoDismiss: 5000 });
+      return true;
+    }
+    if (form.requestSubmit) form.requestSubmit(); else form.submit();
+    return true;
+  }
+
+  // The pending action for this page when it is one of `actions`, as its data
+  // plus `action`; else null.
+  function resume(actions) {
+    let rec = null;
+    try { rec = JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { return null; }
+    if (!rec || rec.path !== location.pathname || Date.now() - rec.t > MAX_AGE) {
+      try { if (rec) sessionStorage.removeItem(KEY); } catch (e) {}
+      return null;
+    }
+    if (![].concat(actions).includes(rec.action)) return null;
+    try { sessionStorage.removeItem(KEY); } catch (e) {}
+    return Object.assign({}, rec.data, { action: rec.action });
+  }
+
+  // Quick-range links: start from the link as rendered (applied filters + its
+  // dates) and swap in every field changed since load. Date fields are left
+  // to the link when it sets a range of its own.
+  function onQuickRange(form, e) {
+    const a = e.target.closest && e.target.closest('.quick-ranges a[href]');
+    if (!a || a.getAttribute('href').startsWith('#')) return;
+    if (!a.dataset.origHref) a.dataset.origHref = a.getAttribute('href');
+    if (!isFormDirty(form)) { a.setAttribute('href', a.dataset.origHref); return; }
+    const u    = new URL(a.dataset.origHref, location.href);
+    const cur  = serialize(form);
+    const orig = new URLSearchParams(snapshots.get(form));
+    const linkSetsDates = DATE_KEYS.some(k => u.searchParams.has(k));
+    new Set([...cur.keys(), ...orig.keys()]).forEach(k => {
+      if (linkSetsDates && DATE_KEYS.includes(k)) return;
+      const now = cur.getAll(k);
+      if (now.join('\0') === orig.getAll(k).join('\0')) return;
+      u.searchParams.delete(k);
+      now.forEach(v => { if (v !== '') u.searchParams.append(k, v); });
+    });
+    a.setAttribute('href', u.pathname + u.search + u.hash);
+  }
+
+  return { isDirty: () => dirtyForm() !== null, run, resume };
+})();
+
+// Copy text to the clipboard; when the browser refuses (no user gesture, e.g.
+// after a reload), show the text in a toast to copy by hand.
+function copyTextOrShow(text, okMsg) {
+  function fallback() {
+    showToast('Copy this link: <input type="text" class="form-control form-control-sm mt-1" readonly>', 'info');
+    const inp = document.querySelector('#msToastContainer .ms-toast:last-child input');
+    if (inp) { inp.value = text; inp.focus(); inp.select(); }
+  }
+  if (!navigator.clipboard) { fallback(); return; }
+  navigator.clipboard.writeText(text)
+    .then(() => showToast(okMsg || 'Link copied to clipboard.', 'success', { autoDismiss: 3000 }))
+    .catch(fallback);
+}
+
+// ── View preferences stored on the server (api/save_pref.php) ──
+// value null clears the preference. Fire-and-forget: a failed save only
+// means the setting isn't remembered next time.
+function savePref(key, value) {
+  const meta  = name => document.querySelector('meta[name="' + name + '"]')?.content || '';
+  const body  = new URLSearchParams({ csrf_token: meta('csrf-token'), key });
+  if (value !== null && value !== undefined) body.append('value', String(value));
+  return fetch(meta('base-path') + '/api/save_pref.php', { method: 'POST', body })
+    .then(r => r.json())
+    .then(json => { if (!json.ok) console.warn('save_pref:', key, json.error); return json.ok; })
+    .catch(e => { console.warn('save_pref:', key, e); return false; });
+}

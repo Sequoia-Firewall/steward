@@ -56,6 +56,8 @@ if (!in_array($fontSizePref, ['small','normal','large'], true)) $fontSizePref = 
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<?php if (isLoggedIn()): ?><meta name="csrf-token" content="<?= h(csrfToken()) ?>">
+<meta name="base-path" content="<?= h(BASE_PATH) ?>"><?php endif; ?>
 <title><?= h($pageTitle) ?> — <?= h(APP_NAME) ?></title>
 <link rel="icon" type="image/jpeg" href="<?= BASE_PATH ?>/assets/img/logo.jpg">
 <link rel="apple-touch-icon" href="<?= BASE_PATH ?>/assets/img/logo.jpg">

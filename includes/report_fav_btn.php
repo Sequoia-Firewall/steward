@@ -87,6 +87,8 @@ function toggleReportFav(btn) {
   const label  = btn.querySelector('.fav-btn-label');
   const icon   = btn.querySelector('.bi');
   const action = faved ? 'remove' : 'add';
+  // Unapplied filter changes: apply them, then add on the reloaded page
+  if (action === 'add' && reportPending.run('dash', { rel: document.getElementById('crKeepRelative')?.checked })) return;
   btn.disabled = true;
   // Pages in this mode (custom.php) may expose their own "keep dates relative" choice
   const url = typeof window.__reportFavUrl === 'function' ? window.__reportFavUrl() : btn.dataset.url;
@@ -116,6 +118,15 @@ function toggleReportFav(btn) {
     })
     .catch((e) => { console.error(e); showToast('Network error.', 'error'); btn.disabled = false; });
 }
+document.addEventListener('DOMContentLoaded', function () {
+  const data = reportPending.resume('dash');
+  if (!data) return;
+  const btn = document.getElementById('btnFavReport');
+  const chk = document.getElementById('crKeepRelative');
+  if (chk && typeof data.rel === 'boolean') chk.checked = data.rel;
+  if (btn.dataset.faved === '1') showToast('This report is already on the dashboard.', 'info');
+  else toggleReportFav(btn);
+});
 </script>
 <?php else: ?>
 <!-- ── Full mode: Save dropdown (Save As, Dashboard, Copy Link) ──────────── -->
@@ -210,7 +221,15 @@ function toggleReportFav(btn) {
   }
 
   /* ── Save As ───────────────────────────────────────────────── */
+  function relData() {
+    const chk = document.getElementById('favKeepRelative');
+    return chk ? { rel: chk.checked } : {};
+  }
+
   window.favOpenSaveAs = function () {
+    // Unapplied filter changes: apply them, then reopen this dialog. A report
+    // opened from Saved Reports keeps updating that same entry.
+    if (reportPending.run('saveas', Object.assign(relData(), { savedId, savedName }))) return;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('favSaveAsModal')).show();
     const inp = document.getElementById('favSaveAsName');
     setTimeout(() => { inp.focus(); inp.select(); }, 300);
@@ -275,6 +294,7 @@ function toggleReportFav(btn) {
   window.favToggleDash = function (btn) {
     const faved  = btn.dataset.faved === '1';
     const action = faved ? 'remove' : 'add';
+    if (action === 'add' && reportPending.run('dash', relData())) return;
     btn.disabled = true;
     const dashParams = new URLSearchParams({
       csrf_token: CSRF, action,
@@ -309,16 +329,31 @@ function toggleReportFav(btn) {
 
   /* ── Copy Link ─────────────────────────────────────────────── */
   window.favCopyLink = function () {
-    const url = window.location.origin + '<?= BASE_PATH ?>' + favUrl();
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard.', 'success'));
-    } else {
-      const ta = document.createElement('textarea');
-      ta.value = url; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); ta.remove();
-      showToast('Link copied to clipboard.', 'success');
-    }
+    if (reportPending.run('copy', relData())) return;
+    copyTextOrShow(window.location.origin + '<?= BASE_PATH ?>' + favUrl());
   };
+
+  /* ── Resume a save action started before filter changes were applied ── */
+  document.addEventListener('DOMContentLoaded', function () {
+    const data = reportPending.resume(['saveas', 'dash', 'copy']);
+    if (!data) return;
+    const chk = document.getElementById('favKeepRelative');
+    if (chk && typeof data.rel === 'boolean') chk.checked = data.rel;
+    if (data.action === 'saveas') {
+      if (!(savedId > 0) && data.savedId > 0) {
+        savedId = data.savedId;
+        savedName = data.savedName;
+        document.getElementById('favSaveAsName').value = savedName;
+      }
+      favOpenSaveAs();
+    } else if (data.action === 'dash') {
+      const item = document.getElementById('favDashItem');
+      if (item.dataset.faved === '1') showToast('This report is already on the dashboard.', 'info');
+      else favToggleDash(item);
+    } else {
+      favCopyLink();
+    }
+  });
 
   /* ── Show saved name in page heading ──────────────────────── */
   if (savedId > 0) {

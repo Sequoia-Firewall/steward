@@ -19,6 +19,10 @@ foreach ($investments as $inv) {
     $invGrouped[$inv['type']][] = $inv;
     if ($inv['is_owned']) $anyOwned = true;
 }
+// View preferences (api/save_pref.php); null = never saved
+$prefShowUnowned = getUserPref(currentUserId(), 'portfolio_show_unowned');
+$prefSort        = getUserPref(currentUserId(), 'portfolio_sort');
+$showUnowned     = $prefShowUnowned !== null ? $prefShowUnowned === '1' : !$anyOwned;
 $invTypeOrder = ['Index','Stock','Bond','CD or Savings Bond','Money Market','Mutual Fund','ETF','Cryptocurrency','Other'];
 
 // Indices that have price history — offered in the comparison dropdown
@@ -77,7 +81,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
     <?php endif; ?>
     <?php if (!empty($investments)): ?>
     <label class="portfolio-unowned-toggle mb-0 ms-auto ps-3">
-      <input type="checkbox" id="showUnowned" <?= $anyOwned ? '' : 'checked' ?>>
+      <input type="checkbox" id="showUnowned" <?= $showUnowned ? 'checked' : '' ?>>
       <span>Show unowned</span>
     </label>
     <?php endif; ?>
@@ -487,17 +491,27 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
 
 <script>
 const CSRF_TOKEN = '<?= h(csrfToken()) ?>';
+// View preferences are stored per user on the server. Values this browser kept
+// in localStorage before that are moved over once (when the server has none),
+// then removed. savePref() comes from money.js, which loads after this script.
+function takeLegacyPref(lsKey, hasServerValue) {
+  let v = null;
+  try { v = localStorage.getItem(lsKey); localStorage.removeItem(lsKey); } catch (e) {}
+  return hasServerValue ? null : v;
+}
+
 // ── Unowned filter ──────────────────────────────────────────────
 (function () {
   const checkbox = document.getElementById('showUnowned');
   if (!checkbox) return;
 
-  const LS_KEY = 'portfolio_showUnowned';
-  const saved = localStorage.getItem(LS_KEY);
-  if (saved !== null) checkbox.checked = saved === '1';
+  const legacy = takeLegacyPref('portfolio_showUnowned', <?= json_encode($prefShowUnowned !== null) ?>);
+  if (legacy === '0' || legacy === '1') {
+    checkbox.checked = legacy === '1';
+    document.addEventListener('DOMContentLoaded', () => savePref('portfolio_show_unowned', legacy));
+  }
 
   function applyFilter() {
-    localStorage.setItem(LS_KEY, checkbox.checked ? '1' : '0');
     const show = checkbox.checked;
     const counts = {};
     document.querySelectorAll('.inv-row').forEach(row => {
@@ -520,20 +534,27 @@ const CSRF_TOKEN = '<?= h(csrfToken()) ?>';
     });
   }
 
-  checkbox.addEventListener('change', applyFilter);
+  checkbox.addEventListener('change', () => {
+    applyFilter();
+    savePref('portfolio_show_unowned', checkbox.checked ? '1' : '0');
+  });
   applyFilter();
 })();
 
 // ── Column sorting (persisted across page loads) ────────────────
 (function () {
-  const LS_KEY  = 'portfolio_sortPref';
   const numCols = new Set(['shares', 'mktval', 'costbasis', 'gainloss']);
+  const prefOf  = s => s.col + ':' + s.dir;
+  const parse   = v => { const m = /^([a-z_]+):(asc|desc)$/.exec(v || ''); return m ? { col: m[1], dir: m[2] } : null; };
 
-  let state = { col: 'mktval', dir: 'desc' };
-  try {
-    const saved = JSON.parse(localStorage.getItem(LS_KEY));
-    if (saved && saved.col) state = saved;
-  } catch (e) {}
+  let state = parse(<?= json_encode($prefSort) ?>) || { col: 'mktval', dir: 'desc' };
+  const legacyRaw = takeLegacyPref('portfolio_sortPref', <?= json_encode($prefSort !== null) ?>);
+  if (legacyRaw) {
+    let legacy = null;
+    try { legacy = JSON.parse(legacyRaw); } catch (e) {}
+    legacy = legacy && parse(prefOf(legacy));
+    if (legacy) { state = legacy; document.addEventListener('DOMContentLoaded', () => savePref('portfolio_sort', prefOf(legacy))); }
+  }
 
   function getSortVal(row, col) {
     const raw = row.dataset[col];
@@ -576,7 +597,6 @@ const CSRF_TOKEN = '<?= h(csrfToken()) ?>';
 
   function applySort(col, dir) {
     state = { col, dir };
-    localStorage.setItem(LS_KEY, JSON.stringify(state));
     updateIcons(col, dir);
     document.querySelectorAll('.portfolio-section').forEach(sec => sortSection(sec, col, dir));
   }
@@ -587,6 +607,7 @@ const CSRF_TOKEN = '<?= h(csrfToken()) ?>';
     const col = th.dataset.col;
     const dir = (state.col === col && state.dir === 'asc') ? 'desc' : 'asc';
     applySort(col, dir);
+    savePref('portfolio_sort', prefOf(state));
   });
 
   applySort(state.col, state.dir);

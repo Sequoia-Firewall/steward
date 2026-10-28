@@ -2257,6 +2257,8 @@ function toggleSaveReport(btn) {
   const icon   = btn.querySelector('i');
 
   if (!saved) {
+    // Unapplied builder changes: run the report with them, then save
+    if (reportPending.run('cr-save', { rel: document.getElementById('crKeepRelative')?.checked })) return;
     const titleInput = document.querySelector('input[name="title"]');
     const title = (titleInput ? titleInput.value.trim() : '') || btn.dataset.defaultTitle;
     if (!title) {
@@ -2324,6 +2326,7 @@ function toggleSaveReport(btn) {
 
 // ── Copy permalink ────────────────────────────────────────────
 function copyPermalink(btn) {
+  if (reportPending.run('cr-copy')) return;
   navigator.clipboard.writeText(window.location.href).then(() => {
     const orig = btn.innerHTML;
     btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
@@ -2336,6 +2339,19 @@ function copyPermalink(btn) {
     }, 2000);
   });
 }
+
+// Resume a save/copy started before builder changes were applied
+document.addEventListener('DOMContentLoaded', function () {
+  const data = reportPending.resume(['cr-save', 'cr-copy']);
+  if (!data) return;
+  if (data.action === 'cr-copy') { copyTextOrShow(window.location.href); return; }
+  const btn = document.getElementById('btnSaveReport');
+  const chk = document.getElementById('crKeepRelative');
+  if (!btn) return;
+  if (chk && typeof data.rel === 'boolean') chk.checked = data.rel;
+  if (btn.dataset.saved === '1') showToast('This report is already saved.', 'info');
+  else toggleSaveReport(btn);
+});
 
 // ── XLSX export ───────────────────────────────────────────────
 function exportXlsx() {
