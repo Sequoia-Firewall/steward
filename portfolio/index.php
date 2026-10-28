@@ -23,6 +23,9 @@ foreach ($investments as $inv) {
 $prefShowUnowned = getUserPref(currentUserId(), 'portfolio_show_unowned');
 $prefSort        = getUserPref(currentUserId(), 'portfolio_sort');
 $showUnowned     = $prefShowUnowned !== null ? $prefShowUnowned === '1' : !$anyOwned;
+$colChooserPref    = 'portfolio_cols';
+$colChooserCols    = ['cusip' => 'CUSIP', 'country' => 'Country', 'memo' => 'Memo'];
+$colChooserVisible = viewColumns($colChooserPref, array_keys($colChooserCols), array_keys($colChooserCols));
 $invTypeOrder = ['Index','Stock','Bond','CD or Savings Bond','Money Market','Mutual Fund','ETF','Cryptocurrency','Other'];
 
 // Indices that have price history — offered in the comparison dropdown
@@ -80,6 +83,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
     </button>
     <?php endif; ?>
     <?php if (!empty($investments)): ?>
+    <?php include __DIR__ . '/../includes/column_chooser.php'; ?>
     <label class="portfolio-unowned-toggle mb-0 ms-auto ps-3">
       <input type="checkbox" id="showUnowned" <?= $showUnowned ? 'checked' : '' ?>>
       <span>Show unowned</span>
@@ -122,12 +126,12 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
       <tr>
         <th>Name</th>
         <th>Symbol</th>
-        <th>CUSIP</th>
+        <th class="col-cusip">CUSIP</th>
         <th class="text-end">Level</th>
         <th class="text-end">Day Change</th>
         <th class="text-end">Change %</th>
-        <th>Country</th>
-        <th>Memo</th>
+        <th class="col-country">Country</th>
+        <th class="col-memo">Memo</th>
         <?php if (canEdit()): ?><th>Actions</th><?php endif; ?>
       </tr>
     </thead>
@@ -146,7 +150,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
           <a href="<?= BASE_PATH ?>/portfolio/security/<?= $secSlug ?>" class="inv-name-link"><?= h($inv['name']) ?></a>
         </td>
         <td><?= $inv['symbol'] ? '<span class="inv-symbol">' . h($inv['symbol']) . '</span>' : '<span class="text-muted">—</span>' ?></td>
-        <td class="text-muted small" style="font-family:monospace"><?= h($inv['cusip'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
+        <td class="text-muted small col-cusip" style="font-family:monospace"><?= h($inv['cusip'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
         <td class="text-end text-nowrap">
           <?php if ($latestPrice !== null): ?>
             <button class="btn btn-link p-0 inv-price inv-index-price"
@@ -185,8 +189,8 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
             </span>
           <?php else: ?><span class="text-muted">—</span><?php endif; ?>
         </td>
-        <td><?= h($inv['country']) ?: '<span class="text-muted">—</span>' ?></td>
-        <td class="text-muted small"><?= h($inv['memo'] ?? '') ?: '—' ?></td>
+        <td class="col-country"><?= h($inv['country']) ?: '<span class="text-muted">—</span>' ?></td>
+        <td class="text-muted small col-memo"><?= h($inv['memo'] ?? '') ?: '—' ?></td>
         <?php if (canEdit()): ?>
         <td class="text-nowrap">
           <button class="btn btn-sm btn-outline-secondary" title="Edit"
@@ -243,15 +247,15 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
       <tr>
         <th class="sortable" data-col="name">Name <i class="bi bi-arrow-down-up sort-icon"></i></th>
         <th class="sortable" data-col="symbol">Symbol <i class="bi bi-arrow-down-up sort-icon"></i></th>
-        <th>CUSIP</th>
+        <th class="col-cusip">CUSIP</th>
         <th class="sortable text-end" data-col="shares">Shares <i class="bi bi-arrow-down-up sort-icon"></i></th>
         <th>Held In</th>
-        <th class="text-end">Price</th>
+        <th class="text-end" title="Latest price, with the change since the previous close">Last Price</th>
         <th class="sortable text-end" data-col="mktval">Mkt Value <i class="bi bi-arrow-down-up sort-icon"></i></th>
         <th class="sortable text-end" data-col="costbasis">Cost Basis <i class="bi bi-arrow-down-up sort-icon"></i></th>
         <th class="sortable text-end" data-col="gainloss">Gain / Loss <i class="bi bi-arrow-down-up sort-icon"></i></th>
-        <th class="sortable" data-col="country">Country <i class="bi bi-arrow-down-up sort-icon"></i></th>
-        <th>Memo</th>
+        <th class="sortable col-country" data-col="country">Country <i class="bi bi-arrow-down-up sort-icon"></i></th>
+        <th class="col-memo">Memo</th>
         <?php if (canEdit()): ?><th>Actions</th><?php endif; ?>
       </tr>
     </thead>
@@ -268,6 +272,8 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
         $costBasis   = ($basisRow && $totalQty > 0) ? $basisRow['avg_cost'] * $totalQty : null;
         $gainLoss    = ($mktValue !== null && $costBasis !== null) ? $mktValue - $costBasis : null;
         $gainPct     = ($gainLoss !== null && $costBasis > 0) ? ($gainLoss / $costBasis) * 100 : null;
+        $prevClose   = $priceRow['prev_close'] ?? null;
+        $dayPct      = ($latestPrice !== null && $prevClose > 0) ? ($latestPrice - $prevClose) / $prevClose * 100 : null;
       ?>
       <tr class="inv-row <?= $owned ? 'inv-owned' : 'inv-unowned' ?>"
           data-owned="<?= $owned ? '1' : '0' ?>"
@@ -290,7 +296,7 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
           <?php endif; ?>
         </td>
         <td><?= $inv['symbol'] ? '<span class="inv-symbol">' . h($inv['symbol']) . '</span>' : '<span class="text-muted">—</span>' ?></td>
-        <td class="text-muted small" style="font-family:monospace"><?= h($inv['cusip'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
+        <td class="text-muted small col-cusip" style="font-family:monospace"><?= h($inv['cusip'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
         <td class="text-end text-nowrap">
           <?php if ($totalQty > 0): ?>
             <span class="inv-qty"><?= rtrim(rtrim(number_format($totalQty, 6), '0'), '.') ?></span>
@@ -319,6 +325,9 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
                     title="<?= h($priceRow['source']) ?> · <?= h($priceRow['price_date']) ?> — click for history">
               <?= formatMoney($latestPrice) ?>
             </button>
+            <?php if ($dayPct !== null): ?>
+            <span class="inv-daychg <?= $dayPct >= 0 ? 'gain-pos' : 'gain-neg' ?>" title="Change since the previous close (<?= h(formatMoney($prevClose)) ?>)"><?= ($dayPct >= 0 ? '+' : '') . number_format($dayPct, 2) ?>%</span>
+            <?php endif; ?>
           <?php else: ?>
             <?php if ($inv['symbol'] && $priceProvider !== 'manual' && !$inv['disable_quotes']): ?>
               <button class="btn btn-link btn-sm p-0 inv-fetch-single me-1"
@@ -350,8 +359,8 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
             <span class="text-muted">—</span>
           <?php endif; ?>
         </td>
-        <td><?= h($inv['country']) ?: '<span class="text-muted">—</span>' ?></td>
-        <td class="text-muted small"><?= h($inv['memo'] ?? '') ?: '—' ?></td>
+        <td class="col-country"><?= h($inv['country']) ?: '<span class="text-muted">—</span>' ?></td>
+        <td class="text-muted small col-memo"><?= h($inv['memo'] ?? '') ?: '—' ?></td>
         <?php if (canEdit()): ?>
         <td class="text-nowrap">
           <button class="btn btn-sm btn-outline-secondary" title="Edit"
@@ -382,7 +391,10 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
     <?php if ($typeTotMktVal !== null || $typeTotCost !== null): ?>
     <tfoot class="portfolio-type-total">
       <tr>
-        <td colspan="6" class="text-end pe-3">Total</td>
+        <?php // Separate cells for optional columns, so totals stay aligned when they're hidden ?>
+        <td colspan="2"></td>
+        <td class="col-cusip"></td>
+        <td colspan="3" class="text-end pe-3">Total</td>
         <td class="text-end text-nowrap">
           <?= $typeTotMktVal !== null ? formatMoney($typeTotMktVal) : '<span class="text-muted">—</span>' ?>
         </td>
@@ -399,7 +411,9 @@ const ALL_INVESTMENTS = <?= json_encode(array_map(fn($i) => [
             </span>
           <?php else: ?><span class="text-muted">—</span><?php endif; ?>
         </td>
-        <td colspan="<?= canEdit() ? 3 : 2 ?>"></td>
+        <td class="col-country"></td>
+        <td class="col-memo"></td>
+        <?php if (canEdit()): ?><td></td><?php endif; ?>
       </tr>
     </tfoot>
     <?php endif; ?>

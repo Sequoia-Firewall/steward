@@ -19,6 +19,33 @@ $invGrouped  = [];
 foreach ($investments as $inv) {
     $invGrouped[$inv['type']][] = $inv;
 }
+// Optional columns (column chooser); the price-history ones are off by default
+$colChooserPref = 'watchlist_cols';
+$colChooserCols = [
+    'cusip' => 'CUSIP', 'country' => 'Country', 'memo' => 'Memo',
+    'prev_close' => 'Prev Close', 'open' => 'Open', 'day_range' => 'Day Range',
+    'volume' => 'Volume', 'prev_volume' => 'Prev Volume', 'avg_volume' => 'Avg Volume (3 mo)',
+    'range_52w' => '52-Week Range', 'ret_1m' => '1M Return', 'ret_ytd' => 'YTD Return', 'ret_1y' => '1Y Return',
+];
+$colChooserVisible = viewColumns($colChooserPref, array_keys($colChooserCols), ['cusip', 'country', 'memo']);
+$stats = getPriceHistoryStats(array_column($investments, 'id'));
+
+// Compact volume: 1.2K / 3.4M / 5.6B
+function fmtVolume(?float $v): string {
+    if ($v === null) return '<span class="text-muted">—</span>';
+    foreach ([1e9 => 'B', 1e6 => 'M', 1e3 => 'K'] as $div => $suf) {
+        if ($v >= $div) return number_format($v / $div, 1) . $suf;
+    }
+    return number_format($v);
+}
+function fmtNum(?float $v): string {
+    return $v === null ? '<span class="text-muted">—</span>' : number_format($v, 2);
+}
+function fmtRet(?float $v): string {
+    if ($v === null) return '<span class="text-muted">—</span>';
+    return '<span class="inv-gain ' . ($v >= 0 ? 'gain-pos' : 'gain-neg') . '">' . ($v >= 0 ? '+' : '') . number_format($v, 2) . '%</span>';
+}
+
 $invTypeOrder = ['Index','Stock','Bond','CD or Savings Bond','Money Market','Mutual Fund','ETF','Cryptocurrency','Other'];
 
 // Indices with price history — for comparison dropdown in price history modal
@@ -49,6 +76,7 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
       <i class="bi bi-arrow-clockwise"></i> Refresh Prices
     </button>
     <?php endif; ?>
+    <?php if (!empty($investments)) include __DIR__ . '/../includes/column_chooser.php'; ?>
     <?php if (canEdit()): ?>
     <button class="btn btn-primary btn-sm" onclick="openInvestmentModal({in_watchlist:1})">
       <i class="bi bi-plus-circle"></i> New Investment
@@ -91,12 +119,22 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
       <tr>
         <th>Name</th>
         <th>Symbol</th>
-        <th>CUSIP</th>
-        <th class="text-end">Price</th>
+        <th class="col-cusip">CUSIP</th>
+        <th class="text-end">Last Price</th>
         <th class="text-end">Day Change</th>
         <th class="text-end">Change %</th>
-        <th>Country</th>
-        <th>Memo</th>
+        <th class="text-end col-prev_close">Prev Close</th>
+        <th class="text-end col-open">Open</th>
+        <th class="text-end col-day_range">Day Range</th>
+        <th class="text-end col-volume">Volume</th>
+        <th class="text-end col-prev_volume">Prev Volume</th>
+        <th class="text-end col-avg_volume" title="Average stored daily volume over the last 3 months">Avg Volume</th>
+        <th class="text-end col-range_52w">52-Week Range</th>
+        <th class="text-end col-ret_1m">1M</th>
+        <th class="text-end col-ret_ytd">YTD</th>
+        <th class="text-end col-ret_1y">1Y</th>
+        <th class="col-country">Country</th>
+        <th class="col-memo">Memo</th>
         <?php if (canEdit()): ?><th>Actions</th><?php endif; ?>
       </tr>
     </thead>
@@ -108,6 +146,7 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
         $prevClose    = $priceRow['prev_close'] ?? null;
         $dayChange    = ($latestPrice !== null && $prevClose !== null) ? $latestPrice - $prevClose : null;
         $dayChangePct = ($dayChange !== null && $prevClose > 0) ? ($dayChange / $prevClose) * 100 : null;
+        $st           = $stats[$invId] ?? [];
       ?>
       <tr>
         <td class="fw-medium">
@@ -123,7 +162,7 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
           <?php endif; ?>
         </td>
         <td><?= $inv['symbol'] ? '<span class="inv-symbol">' . h($inv['symbol']) . '</span>' : '<span class="text-muted">—</span>' ?></td>
-        <td class="text-muted small" style="font-family:monospace"><?= h($inv['cusip'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
+        <td class="text-muted small col-cusip" style="font-family:monospace"><?= h($inv['cusip'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
         <td class="text-end text-nowrap">
           <?php if ($latestPrice !== null): ?>
             <button class="btn btn-link p-0 inv-price inv-index-price"
@@ -162,8 +201,18 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
             </span>
           <?php else: ?><span class="text-muted">—</span><?php endif; ?>
         </td>
-        <td><?= h($inv['country']) ?: '<span class="text-muted">—</span>' ?></td>
-        <td class="text-muted small"><?= h($inv['memo'] ?? '') ?: '—' ?></td>
+        <td class="text-end text-nowrap col-prev_close"><?= fmtNum($st['prev_close'] ?? null) ?></td>
+        <td class="text-end text-nowrap col-open"><?= fmtNum($st['open'] ?? null) ?></td>
+        <td class="text-end text-nowrap col-day_range"><?= isset($st['low'], $st['high']) ? number_format($st['low'], 2) . ' – ' . number_format($st['high'], 2) : '<span class="text-muted">—</span>' ?></td>
+        <td class="text-end text-nowrap col-volume"><?= fmtVolume($st['volume'] ?? null) ?></td>
+        <td class="text-end text-nowrap col-prev_volume"><?= fmtVolume($st['prev_volume'] ?? null) ?></td>
+        <td class="text-end text-nowrap col-avg_volume"><?= fmtVolume($st['avg_volume'] ?? null) ?></td>
+        <td class="text-end text-nowrap col-range_52w"><?= isset($st['low_52w'], $st['high_52w']) ? number_format($st['low_52w'], 2) . ' – ' . number_format($st['high_52w'], 2) : '<span class="text-muted">—</span>' ?></td>
+        <td class="text-end text-nowrap col-ret_1m"><?= fmtRet($st['ret_1m'] ?? null) ?></td>
+        <td class="text-end text-nowrap col-ret_ytd"><?= fmtRet($st['ret_ytd'] ?? null) ?></td>
+        <td class="text-end text-nowrap col-ret_1y"><?= fmtRet($st['ret_1y'] ?? null) ?></td>
+        <td class="col-country"><?= h($inv['country']) ?: '<span class="text-muted">—</span>' ?></td>
+        <td class="text-muted small col-memo"><?= h($inv['memo'] ?? '') ?: '—' ?></td>
         <?php if (canEdit()): ?>
         <td class="text-nowrap">
           <button class="btn btn-sm btn-outline-secondary" title="Edit investment"

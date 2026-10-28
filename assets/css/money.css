@@ -3969,3 +3969,19 @@ tr.bv-filtered, tbody.bv-filtered { display: none; }
 }
 .autogen-period-title { font-weight: 600; font-size: .9rem; }
 .autogen-period-sub   { font-size: .78rem; color: #6c757d; margin-top: 1px; }
+
+/* ── Column chooser / inline day change (Phase 10) ────────── */
+.col-chooser-menu { min-width: 190px; max-height: 70vh; overflow-y: auto; }
+.col-chooser-menu .dropdown-item { cursor: pointer; padding: 3px 8px; }
+.inv-daychg { display: block; font-size: .72rem; font-weight: 600; line-height: 1.1; }
+.memo-postit {
+  position: relative; max-width: 560px; margin: 0 0 16px 4px; padding: 22px 16px 12px;
+  background: #fff7a8; border: 1px solid #f0e07a; border-radius: 2px;
+  box-shadow: 2px 3px 8px rgba(0,0,0,.12); transform: rotate(-.6deg);
+  color: #4a4300; font-size: .9rem; white-space: pre-line;
+}
+.memo-postit-label {
+  position: absolute; top: 5px; left: 10px; font-size: .65rem; font-weight: 800;
+  letter-spacing: .12em; color: #8a7d00;
+}
+@media print { .memo-postit { box-shadow: none; transform: none; } }

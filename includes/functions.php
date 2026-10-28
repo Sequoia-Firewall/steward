@@ -783,6 +783,86 @@ function getLatestInvestmentPrices(bool $forceRefresh = false): array {
     return $cache = $prices;
 }
 
+/**
+ * Quote details from stored price history for the watchlist's optional
+ * columns, per investment id:
+ *   prev_close, prev_volume — the session before the latest one (a weekend
+ *     row from a statement import counts as Friday's session, except crypto)
+ *   open, low, high, volume — the latest row (null when not stored)
+ *   avg_volume — average stored volume over the 3 months up to the latest row
+ *   low_52w, high_52w — over the year up to the latest row (lows/highs, else closes)
+ *   ret_1m, ret_ytd, ret_1y — % change from the last close on or before one
+ *     month ago, the prior year end, and one year ago (null without history)
+ * Everything is measured from each investment's latest stored price.
+ */
+function getPriceHistoryStats(array $invIds): array {
+    $invIds = array_values(array_unique(array_map('intval', $invIds)));
+    if (!$invIds) return [];
+    $phs  = implode(',', array_fill(0, count($invIds), '?'));
+    $stmt = getDB()->prepare(
+        "SELECT ip.investment_id, ip.price_date, ip.close_price, ip.open_price, ip.high_price, ip.low_price, ip.volume,
+                i.type
+         FROM investment_prices ip
+         JOIN investments i ON i.id = ip.investment_id
+         WHERE ip.investment_id IN ($phs)
+           AND ip.price_date >= (SELECT MAX(p2.price_date) FROM investment_prices p2 WHERE p2.investment_id = ip.investment_id) - INTERVAL 400 DAY
+         ORDER BY ip.investment_id, ip.price_date"
+    );
+    $stmt->execute($invIds);
+    $byInv = [];
+    foreach ($stmt->fetchAll() as $r) $byInv[(int)$r['investment_id']][] = $r;
+
+    $num = fn($v) => $v !== null ? (float)$v : null;
+    $out = [];
+    foreach ($byInv as $id => $rows) {
+        $last   = end($rows);
+        $lastTs = strtotime($last['price_date']);
+        $dow    = (int)date('w', $lastTs);
+        $session = $last['type'] !== 'Cryptocurrency' && ($dow === 6 || $dow === 0)
+            ? date('Y-m-d', strtotime($dow === 6 ? '-1 day' : '-2 days', $lastTs))
+            : $last['price_date'];
+        $closeOnOrBefore = function (string $date) use ($rows) {
+            $found = null;
+            foreach ($rows as $r) { if ($r['price_date'] > $date) break; $found = $r; }
+            return $found;
+        };
+        $prev = null;
+        foreach ($rows as $r) { if ($r['price_date'] >= $session) break; $prev = $r; }
+
+        $from3m = date('Y-m-d', strtotime('-3 months', $lastTs));
+        $from1y = date('Y-m-d', strtotime('-1 year', $lastTs));
+        $vols = []; $lo = null; $hi = null;
+        foreach ($rows as $r) {
+            if ($r['price_date'] > $from3m && $r['volume'] !== null) $vols[] = (float)$r['volume'];
+            if ($r['price_date'] > $from1y) {
+                $l = (float)($r['low_price'] ?? $r['close_price']);
+                $h = (float)($r['high_price'] ?? $r['close_price']);
+                $lo = $lo === null ? $l : min($lo, $l);
+                $hi = $hi === null ? $h : max($hi, $h);
+            }
+        }
+        $close = (float)$last['close_price'];
+        $ret = function ($base) use ($close) {
+            return $base && (float)$base['close_price'] > 0 ? ($close / (float)$base['close_price'] - 1) * 100 : null;
+        };
+        $out[$id] = [
+            'prev_close'  => $prev ? (float)$prev['close_price'] : null,
+            'prev_volume' => $prev ? $num($prev['volume']) : null,
+            'open'        => $num($last['open_price']),
+            'low'         => $num($last['low_price']),
+            'high'        => $num($last['high_price']),
+            'volume'      => $num($last['volume']),
+            'avg_volume'  => $vols ? array_sum($vols) / count($vols) : null,
+            'low_52w'     => $lo,
+            'high_52w'    => $hi,
+            'ret_1m'      => $ret($closeOnOrBefore(date('Y-m-d', strtotime('-1 month', $lastTs)))),
+            'ret_ytd'     => $ret($closeOnOrBefore((date('Y', $lastTs) - 1) . '-12-31')),
+            'ret_1y'      => $ret($closeOnOrBefore($from1y)),
+        ];
+    }
+    return $out;
+}
+
 // Per-share prices from the investment's own transactions: buys, sells, priced adds
 // and reinvestments (a quantity-weighted average when several fall on one day).
 // Returns [investment_id => [[date, price], ...]] in date order. Used as the price
@@ -1774,7 +1854,20 @@ const VIEW_PREF_PATTERNS = [
     'portfolio_sort'         => '/^[a-z_]{1,30}:(asc|desc)$/',   // column:direction
     'budget_sort'            => '/^(name|used|variance|actual|remaining|last_year):(asc|desc)$/',
     'budget_chart'           => '/^(cumulative|monthly|variance|groups):(expense|income|net)$/',   // tab:series
+    // Visible optional columns, comma-separated (empty = none); see viewColumns()
+    'portfolio_cols'         => '/^((cusip|country|memo)(,|$))*$/',
+    'watchlist_cols'         => '/^((cusip|country|memo|prev_close|open|day_range|volume|prev_volume|avg_volume|range_52w|ret_1m|ret_ytd|ret_1y)(,|$))*$/',
 ];
+
+/**
+ * Which optional columns to show: the user's saved list for $prefKey (see
+ * VIEW_PREF_PATTERNS), else $defaults. Returns visible keys in $choosable order.
+ */
+function viewColumns(string $prefKey, array $choosable, array $defaults): array {
+    $raw  = getUserPref(currentUserId(), $prefKey);
+    $want = $raw === null ? $defaults : array_filter(explode(',', $raw));
+    return array_values(array_intersect($choosable, $want));
+}
 
 function setUserPref(int $userId, string $key, ?string $value): void {
     $db = getDB();

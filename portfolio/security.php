@@ -171,7 +171,7 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
 </div>
 
 <?php if ($inv['memo']): ?>
-<div class="text-muted small mb-3 ps-1"><?= h($inv['memo']) ?></div>
+<div class="memo-postit" role="note" aria-label="Memo"><span class="memo-postit-label">MEMO</span><?= h($inv['memo']) ?></div>
 <?php endif; ?>
 
 <!-- Shares owned + price history button -->
