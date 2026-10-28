@@ -425,6 +425,8 @@ function cancelTransaction() {
   const deleteBtn = document.getElementById('btnDeleteTxn');
   if (deleteBtn) deleteBtn.style.display = 'none';
   form.reset();
+  // Temporary cash-account options added while editing an investment trade
+  form.querySelectorAll('option[data-temp-cash]').forEach(o => o.remove());
   document.getElementById('txnId').value = '';
   document.getElementById('txnFormTitle').textContent = 'New Transaction';
   // Reset selects to today's date

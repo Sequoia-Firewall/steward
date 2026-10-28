@@ -1087,10 +1087,24 @@ document.addEventListener('DOMContentLoaded', function () {
             set('inv_income_amount', Math.abs(parseFloat(txn.amount) || 0).toFixed(2));
           }
           updateInvTotal();
+          // The cash leg's account may not be in the dropdowns (closed, or this
+          // account itself). Add it as a temporary option so saving doesn't
+          // silently move the cash leg to whichever account is selected.
+          document.querySelectorAll('option[data-temp-cash]').forEach(o => o.remove());
+          const setCash = (elId) => {
+            const sel = document.getElementById(elId);
+            if (!sel) return;
+            if (![...sel.options].some(o => o.value === String(json.cash_account_id))) {
+              const o = new Option(json.cash_account_name || ('Account #' + json.cash_account_id), json.cash_account_id);
+              o.dataset.tempCash = '1';
+              sel.add(o);
+            }
+            sel.value = String(json.cash_account_id);
+          };
           if (json.cash_account_id) {
-            if (inv.activity === 'buy')  set('inv_cash_account_id',    json.cash_account_id);
-            if (inv.activity === 'sell') set('inv_cash_account_to_id', json.cash_account_id);
-            if (inv.activity === 'div' || inv.activity === 'int') set('inv_cash_account_id', json.cash_account_id);
+            if (inv.activity === 'buy')  setCash('inv_cash_account_id');
+            if (inv.activity === 'sell') setCash('inv_cash_account_to_id');
+            if (inv.activity === 'div' || inv.activity === 'int') setCash('inv_cash_account_id');
           }
         } else {
           onActivityChange();

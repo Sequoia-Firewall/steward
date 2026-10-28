@@ -30,16 +30,22 @@ if ($txn['type'] === 'transfer' && $txn['transfer_pair_id']) {
 
 // For investment transactions, fetch detail and linked cash account
 $invDetail     = null;
-$cashAccountId = null;
+$cashAccountId   = null;
+$cashAccountName = null;
 if ($txn['type'] === 'investment') {
     $iStmt = $db->prepare('SELECT * FROM investment_transactions WHERE transaction_id = ?');
     $iStmt->execute([$id]);
     $invDetail = $iStmt->fetch() ?: null;
     if ($txn['transfer_pair_id']) {
-        $cStmt = $db->prepare('SELECT account_id FROM transactions WHERE id = ?');
+        $cStmt = $db->prepare(
+            'SELECT t.account_id, a.name, a.is_closed FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE t.id = ?'
+        );
         $cStmt->execute([$txn['transfer_pair_id']]);
         $cRow = $cStmt->fetch();
-        if ($cRow) $cashAccountId = (int)$cRow['account_id'];
+        if ($cRow) {
+            $cashAccountId   = (int)$cRow['account_id'];
+            $cashAccountName = accountDisplayName($cRow);
+        }
     }
 }
 
@@ -54,6 +60,7 @@ echo json_encode([
     'paired_account'        => $pairedAccount,
     'inv_detail'            => $invDetail,
     'cash_account_id'       => $cashAccountId,
+    'cash_account_name'     => $cashAccountName,
     'is_investment_reciprocal' => $invPair !== null,
     'investment_account_id'    => $invPair['investment_account_id'] ?? null,
     'investment_txn_id'        => $invPair['investment_txn_id'] ?? null,

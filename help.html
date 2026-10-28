@@ -267,7 +267,7 @@ pre code {
 
   <!-- ── Sidebar ──────────────────────────────────────────── -->
   <nav class="sidebar" id="sidebar">
-    <div class="version-tag">Version 2026R4</div>
+    <div class="version-tag">Version 2026R5</div>
 
     <div class="sidebar-section">Getting Started</div>
     <a href="#overview"><i class="bi bi-house-door"></i> Overview</a>
@@ -352,7 +352,7 @@ pre code {
       <tr><td>Favorite Accounts</td><td>Running balances for accounts starred as favorites. The favorite flag is shared across all users &mdash; starring or unstarring an account affects what everyone sees.</td></tr>
       <tr><td>Recent Transactions</td><td>The last 10 transactions across all accounts.</td></tr>
       <tr><td>Monthly Spending</td><td>Current month spending vs. prior month by category.</td></tr>
-      <tr><td>Budget</td><td>Budget progress bars for the current month.</td></tr>
+      <tr><td>Budget</td><td>This month's progress for the dashboard budget's chosen lines (including any rollover), with the budget's top alerts above them. See <a href="#budget">Budgets</a>.</td></tr>
       <tr><td>Upcoming Bills</td><td>Bills and scheduled items due in the next 30 days.</td></tr>
       <tr><td>All Accounts</td><td>Every account grouped by type with balances.</td></tr>
       <tr><td>Key Indicators</td><td>Net worth, total assets, total liabilities, and liquid cash, plus monthly cash flow. Cash flow counts income and expenses the same way as the <a href="#reports">Income vs. Expense report</a>: categorized income and expenses only (refunds reduce expenses), with transfers, opening balances and other uncategorized amounts left out, on the same accounts. Portfolio withdrawals count as income, and money moved into investments shows as <strong>Avg To Investments/mo</strong>, which Avg Net subtracts.</td></tr>
@@ -777,8 +777,8 @@ pre code {
     <h2><i class="bi bi-bar-chart-line"></i> Budgets</h2>
 
     <p>
-      Budgets let you set monthly spending targets by category and track actual spending
-      against them. Navigate to <strong>Budget</strong> in the top nav.
+      Budgets let you set monthly, annual or month-by-month targets by category for a calendar
+      year and track actual income and spending against them. Navigate to <strong>Budget</strong> in the top nav.
     </p>
 
     <h3>Auto-Generate a Budget</h3>
@@ -1485,16 +1485,17 @@ pre code {
       <tr><td><code>categories</code></td><td>Two-level category tree (parent → subcategory). Type is <code>income</code>, <code>expense</code>, or <code>transfer</code>.</td></tr>
       <tr><td><code>payees</code></td><td>Payee directory with optional default category and contact info.</td></tr>
       <tr><td><code>investments</code></td><td>Securities and market indices (ticker, type, CUSIP).</td></tr>
-      <tr><td><code>investment_transactions</code></td><td>Investment activity detail linked to a parent transaction row. Activity types: <code>buy</code>, <code>sell</code>, <code>add</code>, <code>remove</code>, <code>split</code>, <code>reinvest_div</code>, <code>reinvest_cap</code>, <code>div</code> (dividend/cap-gain to cash), <code>int</code> (interest to cash).</td></tr>
+      <tr><td><code>investment_transactions</code></td><td>Investment activity detail linked to a parent transaction row. Activity types: <code>buy</code>, <code>sell</code>, <code>add</code>, <code>remove</code>, <code>split</code>, <code>reinvest_div</code>, <code>reinvest_cap</code>, <code>div</code> (dividend/cap-gain to cash), <code>int</code> (interest to cash). <code>acquired_date</code> holds the original purchase date of shares transferred in, so their FIFO lots keep the right holding period.</td></tr>
       <tr><td><code>investment_prices</code></td><td>Historical daily price records per security.</td></tr>
-      <tr><td><code>scheduled_bills</code></td><td>Recurring bill and deposit templates.</td></tr>
-      <tr><td><code>budgets</code> / <code>budget_categories</code></td><td>Budget definitions and per-category targets.</td></tr>
+      <tr><td><code>scheduled_bills</code></td><td>Recurring bill and deposit templates. <code>due_day</code> keeps a bill's day of month so month-end bills don't drift.</td></tr>
+      <tr><td><code>budgets</code> / <code>budget_categories</code></td><td>Budget definitions and their lines: entry type (monthly, annual, variable), amount, <code>due_months</code> for annual lines (e.g. <code>3,9</code>) and the <code>rollover</code> flag.</td></tr>
+      <tr><td><code>budget_monthly_amounts</code></td><td>Per-month amounts for variable budget lines.</td></tr>
       <tr><td><code>savings_goals</code></td><td>Savings goal targets and progress.</td></tr>
       <tr><td><code>loan_details</code></td><td>Amortization parameters for Loan-type accounts.</td></tr>
       <tr><td><code>paycheck_templates</code></td><td>Saved paycheck entry templates with split lines.</td></tr>
       <tr><td><code>favorite_reports</code></td><td>Dashboard widgets and saved custom reports.</td></tr>
       <tr><td><code>settings</code></td><td>Application-wide key/value settings.</td></tr>
-      <tr><td><code>user_prefs</code></td><td>Per-user display preferences.</td></tr>
+      <tr><td><code>user_prefs</code></td><td>Per-user display preferences: dashboard layout, portfolio sort, "Show unowned" and columns, watchlist columns, and budget sort and chart.</td></tr>
       <tr><td><code>activity_log</code></td><td>Audit trail of login and data-change events.</td></tr>
     </table>
 
@@ -1530,16 +1531,17 @@ pre code {
       <tr><td>memo</td><td>TEXT</td><td>Optional free-text note.</td></tr>
       <tr><td>num</td><td>VARCHAR(20)</td><td>Check number or reference number.</td></tr>
       <tr><td>fitid</td><td>VARCHAR(255)</td><td>Financial institution transaction ID from OFX/QFX imports. Used for duplicate detection.</td></tr>
-      <tr><td>is_split</td><td>TINYINT(1)</td><td>1 = this transaction has rows in <code>transaction_splits</code>. When <code>is_split = 1</code>, the category is stored in the splits table, not on the transaction row itself.</td></tr>
+      <tr><td>is_split</td><td>TINYINT(1)</td><td>1 = this transaction is split across several categories. Categories are always stored in <code>transaction_splits</code> (one row for an ordinary transaction, several for a split), never on the transaction row itself.</td></tr>
       <tr><td>transfer_pair_id</td><td>INT FK</td><td>For transfer transactions: the <code>id</code> of the matching transaction in the other account. Also linked via the <code>transfers</code> table.</td></tr>
+      <tr><td>exclude_from_withdrawals</td><td>TINYINT(1)</td><td>1 = this transfer to or from an investment account is left out of portfolio withdrawals and contributions (set from the register's right-click menu).</td></tr>
     </table>
 
     <!-- ─────────────────────────────── transaction_splits ─────── -->
     <h3>transaction_splits</h3>
     <p>
-      When a transaction is split across multiple categories, one row is written here per
-      line item. The split amounts must sum to the parent transaction's <code>amount</code>.
-      Non-split transactions have no rows in this table.
+      A transaction's categories live here, not on the transaction row: an ordinary
+      categorized transaction has one row, and a split transaction has one row per line item.
+      The split amounts must sum to the parent transaction's <code>amount</code>.
     </p>
     <table class="feature-table schema-tbl">
       <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
