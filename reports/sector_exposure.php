@@ -297,6 +297,10 @@ include __DIR__ . '/../includes/header.php';
     (<strong><?= formatMoney($unclassifiedValue) ?></strong>) has no sector classification.
     Click <strong>Classify More</strong> to look up sectors for the largest unclassified holdings
     (SEC industry codes, then AlphaVantage for up to 20 more).
+    <?php if (SectorFetcher::secUserAgent() === null): ?>
+    <br><span class="small">SEC lookups are off until an administrator sets an SEC contact email under
+    <?php if (isAdmin()): ?><a href="<?= BASE_PATH ?>/settings/index">Online Services</a><?php else: ?>Online Services<?php endif; ?>.</span>
+    <?php endif; ?>
   </div>
   <button type="button" class="btn btn-sm btn-info ms-auto" id="btnClassify">
     <i class="bi bi-tags"></i> Classify More
@@ -478,6 +482,7 @@ include __DIR__ . '/../includes/header.php';
         }).then(r => r.json());
         if (res.ok) {
           showToast('Sector data updated. Reload to see changes.', 'success');
+          if (res.notice) showToast(res.notice, 'warning');
           document.getElementById('classifyBanner')?.remove();
         } else {
           showToast(res.error || 'Fetch failed.', 'error');

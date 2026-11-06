@@ -6,8 +6,6 @@ class SectorFetcher {
     private PDO $db;
     private int $cacheDays = 90;
 
-    /** SEC EDGAR fair-access policy requires a descriptive User-Agent with a contact address. */
-    private const SEC_USER_AGENT = 'Steward webmaster@7312.us';
 
     public function __construct(PDO $db) {
         $this->db = $db;
@@ -134,6 +132,7 @@ class SectorFetcher {
      * Returns [symbol => bool].
      */
     public function fetchMissingFromSec(array $symbols, float $timeBudget = 15.0): array {
+        if (self::secUserAgent() === null) return []; // no contact email registered for this install
         $start = microtime(true);
         $todo  = [];
         foreach (array_unique(array_map('strtoupper', $symbols)) as $sym) {
@@ -247,13 +246,26 @@ class SectorFetcher {
         ];
     }
 
+    /**
+     * SEC EDGAR's fair-access policy requires a User-Agent naming the client
+     * and a contact email. Each installation registers its own address under
+     * Online Services (sec_contact_email); null when none is set, which
+     * disables SEC lookups.
+     */
+    public static function secUserAgent(): ?string {
+        $email = function_exists('getSetting') ? trim((string)getSetting('sec_contact_email', '')) : '';
+        return filter_var($email, FILTER_VALIDATE_EMAIL) ? 'Steward ' . $email : null;
+    }
+
     private function httpGet(string $url): ?string {
+        $ua = self::secUserAgent();
+        if ($ua === null) return null;
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL            => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 15,
-            CURLOPT_HTTPHEADER     => ['User-Agent: ' . self::SEC_USER_AGENT, 'Accept: application/json'],
+            CURLOPT_HTTPHEADER     => ['User-Agent: ' . $ua, 'Accept: application/json'],
             CURLOPT_ENCODING       => '', // accept gzip — submissions JSON can be several hundred KB
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYPEER => true,

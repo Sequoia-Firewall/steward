@@ -10,6 +10,7 @@ $provider          = getSetting('price_provider', 'manual');
 $massiveKey        = getSetting('massive_api_key', '');
 $alphaKey          = getSetting('alphavantage_api_key', '');
 $lastFetched       = getSetting('price_last_fetched');
+$secEmail          = getSetting('sec_contact_email', '');
 
 include __DIR__ . '/../includes/header.php';
 ?>
@@ -90,6 +91,20 @@ include __DIR__ . '/../includes/header.php';
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <div class="settings-group mt-4" id="secContactSection">
+      <label class="settings-label" for="sec_contact_email">SEC EDGAR Contact Email</label>
+      <input type="email" class="form-control form-control-sm" style="max-width:360px"
+             id="sec_contact_email" name="sec_contact_email"
+             value="<?= h($secEmail ?? '') ?>"
+             placeholder="you@example.com" autocomplete="email">
+      <div class="form-text">
+        Sector Exposure's <strong>Classify More</strong> looks up company industry codes on SEC EDGAR.
+        The SEC requires every automated client to identify itself with a contact email, sent with
+        each request as <code>Steward &lt;email&gt;</code>. Use an address you control; it identifies
+        this installation only. SEC lookups are skipped until one is set.
       </div>
     </div>
 

@@ -48,4 +48,8 @@ foreach ($results as $sym => $ok) {
     $out[] = ['symbol' => $sym, 'fetched' => $ok];
 }
 
-echo json_encode(['ok' => true, 'results' => $out]);
+$resp = ['ok' => true, 'results' => $out];
+if (SectorFetcher::secUserAgent() === null) {
+    $resp['notice'] = 'SEC lookups skipped: an administrator needs to set an SEC contact email under Online Services.';
+}
+echo json_encode($resp);
