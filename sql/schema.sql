@@ -1,4 +1,4 @@
--- Money Management Application Schema
+-- Steward Database Schema
 -- PHP/MySQL LAMP Stack
 
 SET FOREIGN_KEY_CHECKS = 0;
