@@ -84,10 +84,19 @@ $mktValue        = ($latestPrice !== null && $sharesOwned > 0.000001) ? $latestP
 $gainLoss        = ($mktValue !== null && $totalCost > 0) ? $mktValue - $totalCost : null;
 $gainPct         = ($gainLoss !== null && $totalCost > 0) ? ($gainLoss / $totalCost) * 100 : null;
 
-// Buy/sell transactions for the inline price history chart markers
+// Buy/sell transactions for the inline price history chart markers, plus one
+// dividend marker per distribution date (cash or reinvested, any account)
 $chartTxns = [];
+$divDates  = [];
 foreach ($transactions as $txn) {
     $act = $txn['activity'] ?? '';
+    if (in_array($act, ['div', 'reinvest_div', 'reinvest_cap'], true)) {
+        if (!isset($divDates[$txn['transaction_date']])) {
+            $divDates[$txn['transaction_date']] = true;
+            $chartTxns[] = ['date' => $txn['transaction_date'], 'activity' => 'div'];
+        }
+        continue;
+    }
     if (!in_array($act, ['buy', 'sell'])) continue;
     $chartTxns[] = [
         'date'     => $txn['transaction_date'],
@@ -95,6 +104,62 @@ foreach ($transactions as $txn) {
         'quantity' => (float)($txn['quantity'] ?? 0),
         'price'    => (float)($txn['inv_price'] ?? 0),
     ];
+}
+
+// Recorded splits (chart markers + Stock Splits panel), and split
+// transactions with no recorded split within a week — offered as one-click
+// suggestions, with the ratio read off the account's running share count
+$secSplits   = getInvestmentSplits([$invId])[$invId] ?? [];
+$chartSplits = array_map(fn($sp) => ['date' => $sp['date'], 'ratio' => $sp['ratio']], $secSplits);
+$nearSplit   = fn(string $a, string $b) => abs(strtotime($a) - strtotime($b)) <= 7 * 86400;
+$qtyDelta    = function (string $act, float $q): float {
+    if (in_array($act, ['buy', 'add', 'split', 'reinvest_div', 'reinvest_cap'], true)) return $q;
+    if (in_array($act, ['sell', 'remove'], true)) return -$q;
+    return 0.0;
+};
+
+$splitSuggestions = [];
+$acctQty = [];
+foreach ($transactions as $txn) {
+    $aid    = (int)$txn['account_id'];
+    $act    = $txn['activity'] ?? '';
+    $q      = (float)($txn['quantity'] ?? 0);
+    $before = $acctQty[$aid] ?? 0.0;
+    $acctQty[$aid] = $before + $qtyDelta($act, $q);
+    if ($act !== 'split' || $before <= 0.000001 || $before + $q <= 0) continue;
+
+    $date = $txn['transaction_date'];
+    foreach ($secSplits as $sp) {
+        if ($nearSplit($sp['date'], $date)) continue 2;
+    }
+    $ratio = ($before + $q) / $before;
+    // Several accounts split the same day: keep the cleanest ratio (a
+    // fractional share paid as cash leaves one account slightly off)
+    $prev = $splitSuggestions[$date] ?? null;
+    if ($prev === null || abs($ratio - round($ratio)) < abs($prev - round($prev))) $splitSuggestions[$date] = $ratio;
+}
+$splitSuggestions = array_map(fn($ratio) => $ratio >= 1
+    ? ['new' => round($ratio, 4), 'old' => 1]
+    : ['new' => 1, 'old' => round(1 / $ratio, 4)], $splitSuggestions);
+
+// Accounts that held shares going into a recorded split but have no Split
+// transaction within a week of it — their share count is still pre-split
+$splitWarnings = [];
+foreach ($secSplits as $sp) {
+    $held = []; $names = []; $hasSplitTxn = [];
+    foreach ($transactions as $txn) {
+        $aid = (int)$txn['account_id'];
+        $act = $txn['activity'] ?? '';
+        $names[$aid] = $txn['account_name'];
+        if ($act === 'split' && $nearSplit($txn['transaction_date'], $sp['date'])) $hasSplitTxn[$aid] = true;
+        if ($txn['transaction_date'] >= $sp['date']) continue;
+        $held[$aid] = ($held[$aid] ?? 0.0) + $qtyDelta($act, (float)($txn['quantity'] ?? 0));
+    }
+    foreach ($held as $aid => $qty) {
+        if ($qty > 0.000001 && empty($hasSplitTxn[$aid])) {
+            $splitWarnings[] = ['split' => $sp, 'account' => $names[$aid], 'qty' => $qty];
+        }
+    }
 }
 
 // ── Performance & Cost Analysis date range ──────────────────────
@@ -355,7 +420,57 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
     <div class="d-flex align-items-center gap-3 mt-2 small text-muted">
       <span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#1a7a3c;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">B</span> Buy</span>
       <span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#c0392b;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">S</span> Sell</span>
+      <?php if ($divDates): ?>
+      <span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#1a5fb4;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">D</span> Dividend</span>
+      <?php endif; ?>
+      <?php if ($secSplits): ?>
+      <span><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#6f42c1;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">S</span> Split</span>
+      <span>Prices before a split are shown split-adjusted.</span>
+      <?php endif; ?>
     </div>
+  </div>
+
+  <!-- Stock splits -->
+  <div class="mt-3 small" id="secSplits">
+    <span class="fw-semibold me-2"><i class="bi bi-scissors"></i> Stock Splits:</span>
+    <?php if (!$secSplits): ?><span class="text-muted me-2">None recorded.</span><?php endif; ?>
+    <?php foreach ($secSplits as $sp): ?>
+    <span class="badge text-bg-light border me-2 fw-normal" style="font-size:.8rem">
+      <?= formatDate($sp['date']) ?> — <?= h(fmtSplitRatio($sp['ratio'])) ?>
+      <?php if (canEdit()): ?>
+      <a href="#" class="text-danger ms-1 sec-split-del" data-id="<?= (int)$sp['id'] ?>" title="Delete split"><i class="bi bi-x-lg"></i></a>
+      <?php endif; ?>
+    </span>
+    <?php endforeach; ?>
+    <?php if (canEdit()): ?>
+    <?php foreach ($splitSuggestions as $sDate => $sg): ?>
+    <button type="button" class="btn btn-outline-primary btn-sm py-0 me-2 sec-split-suggest"
+            data-date="<?= h($sDate) ?>" data-new="<?= h($sg['new']) ?>" data-old="<?= h($sg['old']) ?>"
+            title="A Split transaction on this date has no recorded split">
+      <i class="bi bi-plus-lg"></i> Record <?= h(fmtSplitRatio($sg['new'] / $sg['old'])) ?> split on <?= formatDate($sDate) ?>
+    </button>
+    <?php endforeach; ?>
+    <a href="#" class="ms-1" id="secSplitAddToggle">Add split…</a>
+    <form id="secSplitForm" class="d-none mt-2 align-items-center gap-2 flex-wrap">
+      <label class="text-muted">Ex-date</label>
+      <input type="date" name="split_date" class="form-control form-control-sm" style="width:auto" required>
+      <input type="number" name="new_shares" class="form-control form-control-sm text-end" style="width:80px" step="any" min="0" placeholder="3" required>
+      <span class="text-muted">new for</span>
+      <input type="number" name="old_shares" class="form-control form-control-sm text-end" style="width:80px" step="any" min="0" value="1" required>
+      <span class="text-muted">old</span>
+      <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      <span class="text-danger" id="secSplitErr"></span>
+    </form>
+    <div class="text-muted mt-1">Records the split for charts and returns only. Share counts come from each account's Split transaction.</div>
+    <?php endif; ?>
+    <?php foreach ($splitWarnings as $w): ?>
+    <div class="text-danger mt-1">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <?= h($w['account']) ?> held <?= rtrim(rtrim(number_format($w['qty'], 6), '0'), '.') ?> shares going into the
+      <?= h(fmtSplitRatio($w['split']['ratio'])) ?> split on <?= formatDate($w['split']['date']) ?>
+      but has no Split transaction, so its share count is still pre-split.
+    </div>
+    <?php endforeach; ?>
   </div>
 </div>
 
@@ -542,6 +657,7 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
   const INV_ID     = <?= $invId ?>;
   const INV_NAME   = <?= json_encode($invName . ($symbol ? ' (' . $symbol . ')' : '')) ?>;
   const CHART_TXNS = <?= json_encode($chartTxns) ?>;
+  const CHART_SPLITS = <?= json_encode($chartSplits) ?>;
 
   let secChart    = null;
   let allPrices   = [];
@@ -569,8 +685,30 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
       markers.forEach(m => {
         const pt = findNearest(m.date, labels, ptMap);
         if (!pt) return;
-        const isBuy = m.activity === 'buy';
         ctx.beginPath();
+        if (m.activity === 'split') {
+          // Rounded square (Sell is a circle), above the line so it doesn't
+          // sit on top of a B/S on the same day
+          const y = pt.y - 18;
+          ctx.roundRect(pt.x - 9, y - 9, 18, 18, 3);
+          ctx.fillStyle = '#6f42c1';
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText('S', pt.x, y);
+          return;
+        }
+        if (m.activity === 'div') {
+          // Below the line, so it stays clear of a B/S on the line and a
+          // split marker above it on the same day
+          const y = pt.y + 18;
+          ctx.arc(pt.x, y, 9, 0, Math.PI * 2);
+          ctx.fillStyle = '#1a5fb4';
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText('D', pt.x, y);
+          return;
+        }
+        const isBuy = m.activity === 'buy';
         ctx.arc(pt.x, pt.y, 9, 0, Math.PI * 2);
         ctx.fillStyle = isBuy ? '#1a7a3c' : '#c0392b';
         ctx.fill();
@@ -603,7 +741,8 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
 
   function renderChart() {
     const prices = filterByRange(allPrices, activeRange, 'date');
-    const txns   = filterByRange(CHART_TXNS, activeRange, 'date');
+    const txns   = filterByRange(CHART_TXNS, activeRange, 'date')
+      .concat(filterByRange(CHART_SPLITS, activeRange, 'date').map(sp => ({ date: sp.date, activity: 'split' })));
 
     const canvas = document.getElementById('secPhChart');
     if (secChart) { secChart.destroy(); secChart = null; }
@@ -639,6 +778,7 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
         animation:          false,
         responsive:         true,
         maintainAspectRatio: false,
+        layout:             { padding: { top: 20, bottom: 20 } },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -688,6 +828,56 @@ const PH_INDICES = <?= json_encode(array_map(fn($i) => [
         '<span class="text-danger small">Failed to load price history.</span>';
     }
   })();
+})();
+
+// ── Stock splits panel ───────────────────────────────────────
+(function () {
+  const panel = document.getElementById('secSplits');
+  const form  = document.getElementById('secSplitForm');
+  if (!panel || !form) return;
+
+  async function post(params) {
+    const body = new URLSearchParams({ csrf_token: CSRF_TOKEN, investment_id: <?= $invId ?>, ...params });
+    const res  = await fetch(BASE_PATH + '/portfolio/save_split', { method: 'POST', body });
+    return res.json();
+  }
+
+  document.getElementById('secSplitAddToggle').addEventListener('click', e => {
+    e.preventDefault();
+    form.classList.toggle('d-none');
+    form.classList.toggle('d-flex');
+  });
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      const data = await post(Object.fromEntries(new FormData(form)));
+      if (data.ok) location.reload();
+      else document.getElementById('secSplitErr').textContent = data.error || 'Save failed.';
+    } catch (err) {
+      document.getElementById('secSplitErr').textContent = 'Network error.';
+    }
+  });
+
+  panel.addEventListener('click', async e => {
+    const del = e.target.closest('.sec-split-del');
+    const sug = e.target.closest('.sec-split-suggest');
+    try {
+      if (del) {
+        e.preventDefault();
+        if (!confirm('Delete this split? Share counts are not affected.')) return;
+        const data = await post({ action: 'delete', id: del.dataset.id });
+        if (data.ok) location.reload(); else alert(data.error || 'Delete failed.');
+      } else if (sug) {
+        sug.disabled = true;
+        const data = await post({ split_date: sug.dataset.date, new_shares: sug.dataset.new, old_shares: sug.dataset.old });
+        if (data.ok) location.reload(); else { sug.disabled = false; alert(data.error || 'Save failed.'); }
+      }
+    } catch (err) {
+      if (sug) sug.disabled = false;
+      alert('Network error.');
+    }
+  });
 })();
 
 (function(){

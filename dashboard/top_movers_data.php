@@ -26,10 +26,11 @@ try {
     $stmt = $db->prepare(
         "SELECT i.id, i.name, i.symbol, i.type,
                 hist.close_price             AS start_price,
+                hist.price_date              AS start_date,
                 COALESCE(h.qty, 0)           AS qty
          FROM investments i
          LEFT JOIN (
-             SELECT ip.investment_id, ip.close_price
+             SELECT ip.investment_id, ip.close_price, ip.price_date
              FROM investment_prices ip
              INNER JOIN (
                  SELECT investment_id, MAX(price_date) AS mx
@@ -60,12 +61,17 @@ try {
     echo json_encode(['ok' => false, 'error' => 'Database error']); exit;
 }
 
+// A split inside the period would otherwise read as a price drop
+$splits = getInvestmentSplits(array_column($rawRows, 'id'));
+
 $rows = [];
 foreach ($rawRows as $r) {
     $iid = (int)$r['id'];
     if (!isset($latestPrices[$iid])) continue; // matches the prior INNER JOIN on current price
     $cur    = $latestPrices[$iid]['price'];
-    $hist   = $r['start_price'] !== null ? (float)$r['start_price'] : null;
+    $hist   = $r['start_price'] !== null
+        ? (float)$r['start_price'] / splitPriceFactor($splits[$iid] ?? [], $r['start_date'])
+        : null;
     $qty    = (float)$r['qty'];
     $chg    = $hist !== null ? round($cur - $hist, 4)          : null;
     $chgPct = ($chg !== null && $hist > 0) ? round($chg / $hist * 100, 2) : null;

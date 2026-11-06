@@ -1,6 +1,10 @@
 <?php
 
 // Each bar: ['date'=>'YYYY-MM-DD','open'=>float|null,'high'=>float|null,'low'=>float|null,'close'=>float,'volume'=>int|null,'vwap'=>float|null]
+//
+// Bars are as traded, NOT split-adjusted: historical valuations multiply a
+// stored price by the share count held on that date, which is pre-split
+// before a split's ex-date. Charts adjust for display (investment_splits).
 
 abstract class PriceProvider {
     abstract public function getLatestBar(string $symbol): ?array;
@@ -13,6 +17,11 @@ abstract class PriceProvider {
     abstract public function parseLatestBarData(?array $data): ?array;
 
     public function getName(): string { return static::class; }
+
+    // Stock splits the provider knows of, as a date-ascending list of
+    // ['date' => ex-date, 'ratio' => new shares per old share]; null when
+    // the lookup failed. Providers without a split feed return [].
+    public function getSplits(string $symbol): ?array { return []; }
 
     protected function httpGet(string $url, array $headers = []): ?array {
         $ctx = stream_context_create(['http' => [
@@ -106,9 +115,14 @@ class MassiveProvider extends PriceProvider {
         return $data !== null && in_array($data['status'] ?? '', ['OK', 'DELAYED'], true);
     }
 
+    // Massive stamps a daily bar at midnight US Eastern, so its date must be
+    // read in Eastern time — in a zone west of Eastern it would fall on the
+    // previous day
     private function bar(array $r, ?int $ts = null): array {
+        $date = (new DateTime('@' . ($ts ?? intdiv((int)$r['t'], 1000))))
+            ->setTimezone(new DateTimeZone('America/New_York'))->format('Y-m-d');
         return [
-            'date'   => $ts ? date('Y-m-d', $ts) : date('Y-m-d', (int)($r['t'] / 1000)),
+            'date'   => $date,
             'open'   => isset($r['o'])  ? (float)$r['o']  : null,
             'high'   => isset($r['h'])  ? (float)$r['h']  : null,
             'low'    => isset($r['l'])  ? (float)$r['l']  : null,
@@ -120,7 +134,7 @@ class MassiveProvider extends PriceProvider {
 
     public function latestBarUrl(string $symbol): string {
         return "{$this->base}/v2/aggs/ticker/" . rawurlencode($symbol)
-             . '/prev?adjusted=true&apiKey=' . rawurlencode($this->apiKey);
+             . '/prev?adjusted=false&apiKey=' . rawurlencode($this->apiKey);
     }
 
     public function parseLatestBarData(?array $data): ?array {
@@ -136,7 +150,7 @@ class MassiveProvider extends PriceProvider {
     public function getHistoricalBars(string $symbol, string $from, string $to): array {
         $url  = "{$this->base}/v2/aggs/ticker/" . rawurlencode($symbol)
               . "/range/1/day/{$from}/{$to}"
-              . '?adjusted=true&sort=asc&limit=50000&apiKey=' . rawurlencode($this->apiKey);
+              . '?adjusted=false&sort=asc&limit=50000&apiKey=' . rawurlencode($this->apiKey);
         $data = $this->httpGet($url);
         if (!$this->isOk($data)) return [];
         $out = [];
@@ -206,7 +220,49 @@ class AlphaVantageProvider extends PriceProvider {
 // ── Yahoo Finance (unofficial, no API key) ──────────────────────
 
 class YahooProvider extends PriceProvider {
+    private array $splitCache = [];
+
     public function getName(): string { return 'yahoo'; }
+
+    // Yahoo only lists splits inside the requested period, but adjusts bars
+    // for every split up to today, so the full list comes from a separate
+    // lightweight call over the security's whole history.
+    public function getSplits(string $symbol): ?array {
+        if (array_key_exists($symbol, $this->splitCache)) return $this->splitCache[$symbol];
+        $data   = $this->httpGet('https://query1.finance.yahoo.com/v8/finance/chart/'
+                . rawurlencode($symbol) . '?range=max&interval=3mo&events=split');
+        $result = $data['chart']['result'][0] ?? null;
+        if (!$result) return $this->splitCache[$symbol] = null;
+
+        $splits = [];
+        foreach ($result['events']['splits'] ?? [] as $sp) {
+            $num = (float)($sp['numerator'] ?? 0);
+            $den = (float)($sp['denominator'] ?? 0);
+            if (!isset($sp['date']) || $num <= 0 || $den <= 0 || $num == $den) continue;
+            $splits[] = ['date' => date('Y-m-d', (int)$sp['date']), 'ratio' => $num / $den];
+        }
+        usort($splits, fn($a, $b) => strcmp($a['date'], $b['date']));
+        return $this->splitCache[$symbol] = $splits;
+    }
+
+    // Multiplies each bar's prices by the splits after its date (and divides
+    // its volume), turning split-adjusted bars back into as-traded ones.
+    public static function unadjustForSplits(array $bars, array $splits): array {
+        if (!$splits) return $bars;
+        foreach ($bars as &$bar) {
+            $f = 1.0;
+            foreach ($splits as $sp) {
+                if ($sp['date'] > $bar['date']) $f *= $sp['ratio'];
+            }
+            if ($f == 1.0) continue;
+            foreach (['open', 'high', 'low', 'close'] as $k) {
+                if ($bar[$k] !== null) $bar[$k] *= $f;
+            }
+            if ($bar['volume'] !== null) $bar['volume'] = (int)round($bar['volume'] / $f);
+        }
+        unset($bar);
+        return $bars;
+    }
 
     public function latestBarUrl(string $symbol): string {
         return 'https://query1.finance.yahoo.com/v8/finance/chart/'
@@ -271,7 +327,16 @@ class YahooProvider extends PriceProvider {
                 'vwap'   => null,
             ];
         }
-        return $out;
+        if (!$out) return $out;
+
+        // Yahoo's quotes are split-adjusted: undo every later split so the
+        // bars are as traded. Without the split list there's no telling
+        // which bars are adjusted, so fail rather than store them.
+        $splits = $this->getSplits($symbol);
+        if ($splits === null) {
+            throw new RuntimeException('could not load split history from Yahoo; prices not saved');
+        }
+        return self::unadjustForSplits($out, $splits);
     }
 }
 

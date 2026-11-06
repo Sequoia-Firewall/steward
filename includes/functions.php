@@ -725,6 +725,86 @@ function logActivity(string $event, string $description, ?int $userId = null, ?s
 
 // ── Investment prices ───────────────────────────────────────────
 
+/**
+ * Recorded stock splits (investment_splits) as investment_id → date-ascending
+ * list of ['id', 'date', 'ratio', 'raw']. Pass null for every investment.
+ * Memoized for the request.
+ *
+ * 'raw' says whether the stored investment_prices rows before the ex-date are
+ * still in pre-split terms. Quotes fetched day by day are (a 3-for-1 split
+ * takes $212 to $68), but a history downloaded already split-adjusted isn't,
+ * so it's detected from the stored closes either side of the ex-date: a gap
+ * of at least half the split (in log terms) means raw. No price on one side
+ * counts as raw. Transaction prices are always pre-split, whatever 'raw' says.
+ */
+function getInvestmentSplits(?array $ids = null): array {
+    static $cache = null;
+    if ($cache === null) {
+        $cache = [];
+        try {
+            $db     = getDB();
+            $rows   = $db->query('SELECT id, investment_id, split_date, ratio FROM investment_splits ORDER BY investment_id, split_date')->fetchAll();
+            $before = $db->prepare('SELECT close_price FROM investment_prices WHERE investment_id = ? AND price_date < ? AND close_price > 0 ORDER BY price_date DESC LIMIT 1');
+            $after  = $db->prepare('SELECT close_price FROM investment_prices WHERE investment_id = ? AND price_date >= ? AND close_price > 0 ORDER BY price_date ASC LIMIT 1');
+            foreach ($rows as $r) {
+                $iid   = (int)$r['investment_id'];
+                $ratio = (float)$r['ratio'];
+                $before->execute([$iid, $r['split_date']]);
+                $after->execute([$iid, $r['split_date']]);
+                $pre  = (float)$before->fetchColumn();
+                $post = (float)$after->fetchColumn();
+                $raw  = !($pre > 0 && $post > 0 && $ratio > 0 && $ratio != 1.0)
+                     || log($pre / $post) / log($ratio) >= 0.5;
+                $cache[$iid][] = ['id' => (int)$r['id'], 'date' => $r['split_date'], 'ratio' => $ratio, 'raw' => $raw];
+            }
+        } catch (Exception $e) {
+            $cache = []; // table missing before migration 11 — no splits
+        }
+    }
+    if ($ids === null) return $cache;
+    return array_intersect_key($cache, array_flip(array_map('intval', $ids)));
+}
+
+/**
+ * Divisor that puts a price dated $date into today's (post-split) terms: the
+ * product of the ratios of splits after $date. $marketPrice = true for an
+ * investment_prices close (only raw splits apply), false for a price recorded
+ * on a transaction (always pre-split). Display only — valuations pair stored
+ * prices with the share count of the same date and must not use this.
+ */
+function splitPriceFactor(array $splits, string $date, bool $marketPrice = true): float {
+    $factor = 1.0;
+    foreach ($splits as $s) {
+        if ($s['date'] > $date && ($s['raw'] || !$marketPrice) && $s['ratio'] > 0) $factor *= $s['ratio'];
+    }
+    return $factor;
+}
+
+/** A split ratio as "3-for-1" (forward) or "1-for-10" (reverse). */
+function fmtSplitRatio(float $ratio): string {
+    $n = fn($v) => rtrim(rtrim(number_format($v, 4, '.', ''), '0'), '.');
+    return $ratio >= 1 ? $n($ratio) . '-for-1' : '1-for-' . $n(1 / $ratio);
+}
+
+/**
+ * Puts each row's prev_close into the same split terms as its price when a
+ * raw split falls between the two sessions (the ex-date itself would
+ * otherwise show a 2/3 "drop" for a 3-for-1). Rows need 'price_date' and
+ * 'prev_date'; 'prev_date' is dropped from the result.
+ */
+function _splitAdjustPrevCloses(array $prices): array {
+    $splits = getInvestmentSplits(array_keys($prices));
+    foreach ($prices as $iid => &$p) {
+        if (isset($splits[$iid]) && $p['prev_close'] !== null && $p['prev_date'] !== null) {
+            $upTo = array_filter($splits[$iid], fn($s) => $s['date'] <= $p['price_date']);
+            $p['prev_close'] /= splitPriceFactor($upTo, $p['prev_date']);
+        }
+        unset($p['prev_date']);
+    }
+    unset($p);
+    return $prices;
+}
+
 // Memoized for the duration of one request — several unrelated dashboard/report
 // code paths call this independently. Pass $forceRefresh after writing new price
 // rows in the same request (see accounts/apply_reconciliation.php) so a stale
@@ -749,7 +829,15 @@ function getLatestInvestmentPrices(bool $forceRefresh = false): array {
                           AND ip2.price_date < latest.session_date
                         ORDER BY ip2.price_date DESC
                         LIMIT 1
-                    ) AS prev_close
+                    ) AS prev_close,
+                    (
+                        SELECT ip2.price_date
+                        FROM investment_prices ip2
+                        WHERE ip2.investment_id = latest.investment_id
+                          AND ip2.price_date < latest.session_date
+                        ORDER BY ip2.price_date DESC
+                        LIMIT 1
+                    ) AS prev_date
              FROM (
                  SELECT ip.investment_id, ip.close_price, ip.price_date, ip.source, ip.volume,
                         CASE
@@ -778,9 +866,10 @@ function getLatestInvestmentPrices(bool $forceRefresh = false): array {
             'source'     => $row['source'],
             'volume'     => (float)$row['volume'],
             'prev_close' => $row['prev_close'] !== null ? (float)$row['prev_close'] : null,
+            'prev_date'  => $row['prev_date'],
         ];
     }
-    return $cache = $prices;
+    return $cache = _splitAdjustPrevCloses($prices);
 }
 
 /**
@@ -809,8 +898,19 @@ function getPriceHistoryStats(array $invIds): array {
          ORDER BY ip.investment_id, ip.price_date"
     );
     $stmt->execute($invIds);
-    $byInv = [];
-    foreach ($stmt->fetchAll() as $r) $byInv[(int)$r['investment_id']][] = $r;
+    // Split-adjusted, so the 52-week range and trailing returns span a split
+    $splits = getInvestmentSplits($invIds);
+    $byInv  = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $f = splitPriceFactor($splits[(int)$r['investment_id']] ?? [], $r['price_date']);
+        if ($f != 1.0) {
+            foreach (['open_price', 'high_price', 'low_price', 'close_price'] as $k) {
+                if ($r[$k] !== null) $r[$k] = (float)$r[$k] / $f;
+            }
+            if ($r['volume'] !== null) $r['volume'] = (float)$r['volume'] * $f;
+        }
+        $byInv[(int)$r['investment_id']][] = $r;
+    }
 
     $num = fn($v) => $v !== null ? (float)$v : null;
     $out = [];
@@ -1369,10 +1469,13 @@ function getInvestmentPerformanceSeries(array $ids, string $fromDate, string $to
     );
     $stmt->execute(array_merge($ids, [$fromDate, $toDate]));
 
+    // Split-adjusted, so a split isn't read as a price drop
+    $splits    = getInvestmentSplits($ids);
     $rawPrices = [];
     $allDates  = [];
     foreach ($stmt->fetchAll() as $p) {
-        $rawPrices[(int)$p['investment_id']][$p['price_date']] = (float)$p['close_price'];
+        $iid = (int)$p['investment_id'];
+        $rawPrices[$iid][$p['price_date']] = (float)$p['close_price'] / splitPriceFactor($splits[$iid] ?? [], $p['price_date']);
         $allDates[$p['price_date']] = true;
     }
     ksort($allDates);
@@ -1632,9 +1735,11 @@ function getInvestmentCostProfitAnalysis(array $ids, string $fromDate, string $t
 // chart usable even for a security with only a handful of manual/fetched prices.
 // $realOnly (used by the manual price editor, which edits/deletes actual
 // investment_prices rows) skips the fallback and returns only real price rows.
+// $splitAdjusted puts prices before a recorded split in post-split terms
+// (charts only — see splitPriceFactor()).
 // Returned rows are ordered by date and shaped for direct JSON/chart use: date,
 // open, high, low, close (always present), volume, vwap, source.
-function getInvestmentPriceHistory(int $investmentId, bool $realOnly = false): array {
+function getInvestmentPriceHistory(int $investmentId, bool $realOnly = false, bool $splitAdjusted = false): array {
     $db = getDB();
 
     $priceStmt = $db->prepare(
@@ -1681,7 +1786,7 @@ function getInvestmentPriceHistory(int $investmentId, bool $realOnly = false): a
         $rows = array_values($byDate);
     }
 
-    return array_map(fn($p) => [
+    $out = array_map(fn($p) => [
         'date'   => $p['price_date'],
         'open'   => $p['open_price']  !== null ? (float)$p['open_price']  : null,
         'high'   => $p['high_price']  !== null ? (float)$p['high_price']  : null,
@@ -1691,6 +1796,20 @@ function getInvestmentPriceHistory(int $investmentId, bool $realOnly = false): a
         'vwap'   => $p['vwap']        !== null ? (float)$p['vwap']        : null,
         'source' => $p['source'],
     ], $rows);
+
+    $splits = $splitAdjusted ? (getInvestmentSplits([$investmentId])[$investmentId] ?? []) : [];
+    if ($splits) {
+        foreach ($out as &$p) {
+            $f = splitPriceFactor($splits, $p['date'], $p['source'] !== 'transaction');
+            if ($f == 1.0) continue;
+            foreach (['open', 'high', 'low', 'close', 'vwap'] as $k) {
+                if ($p[$k] !== null) $p[$k] /= $f;
+            }
+            if ($p['volume'] !== null) $p['volume'] = (int)round($p['volume'] * $f);
+        }
+        unset($p);
+    }
+    return $out;
 }
 
 // Builds a "Total Return" overlay for a getInvestmentPerformanceSeries() line:

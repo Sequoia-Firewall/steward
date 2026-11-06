@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS budgets;
 DROP TABLE IF EXISTS favorite_reports;
 DROP TABLE IF EXISTS payees;
 DROP TABLE IF EXISTS settings;
+DROP TABLE IF EXISTS investment_splits;
 DROP TABLE IF EXISTS investment_prices;
 DROP TABLE IF EXISTS investment_transactions;
 DROP TABLE IF EXISTS investments;
@@ -194,6 +195,18 @@ CREATE TABLE investment_prices (
     created_at    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_inv_date (investment_id, price_date),
+    FOREIGN KEY (investment_id) REFERENCES investments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Stock splits: ex-date (first session at the post-split price) and ratio
+-- (new shares per old share; 3 = 3-for-1, 0.1 = 1-for-10 reverse split)
+CREATE TABLE investment_splits (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    investment_id INT           NOT NULL,
+    split_date    DATE          NOT NULL,
+    ratio         DECIMAL(15,8) NOT NULL,
+    created_at    TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_inv_split (investment_id, split_date),
     FOREIGN KEY (investment_id) REFERENCES investments(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

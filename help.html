@@ -519,7 +519,7 @@ pre code {
       <tr><td>Sell</td><td>Sell shares. Increases the linked cash account by the proceeds (qty × price − commission).</td></tr>
       <tr><td>Add</td><td>Add shares to a position with no cash movement — used for share transfers in, grants, or manual adjustments. Enter the total cost basis if you know it; a warning appears when it's left blank, since the shares would otherwise count as $0 cost. For shares transferred in, set <strong>Originally Acquired</strong> to the date you first bought them so the holding period carries over (it can't be later than the transaction date). OFX imports fill both in from the broker's transfer details when provided.</td></tr>
       <tr><td>Remove</td><td>Remove shares from a position with no cash movement — used for share transfers out or expirations. If you received money for the shares, record a <strong>Sell</strong> instead so the proceeds and gain are tracked.</td></tr>
-      <tr><td>Split</td><td>Record a stock split. Enter the new share quantity after the split.</td></tr>
+      <tr><td>Split</td><td>Record a stock split. Enter the new share quantity after the split. Date it on the split's ex-date (the first day the stock trades at the post-split price), and record the split once on the security's page too (see <a href="#portfolio">Stock Splits</a>) so charts and returns aren't thrown off.</td></tr>
       <tr><td>Reinvest Dividend</td><td>Dividend or interest automatically reinvested into additional shares. Both sides (investment + shares) stay in the investment account.</td></tr>
       <tr><td>Reinvest Cap Gain</td><td>Capital gain distribution automatically reinvested into additional shares.</td></tr>
       <tr><td>Dividend (Cash)</td><td>Cash dividend or capital gain distribution deposited into the linked cash account. Select the security name as the payee and enter the dollar amount. A matching deposit is created automatically in the cash account.</td></tr>
@@ -935,7 +935,8 @@ pre code {
       <li>Each security is listed with symbol, type, <strong>Last Price</strong> (with the % change since the previous close underneath), total shares, market value, cost basis, and gain/loss.</li>
       <li>Use <strong><i class="bi bi-layout-three-columns"></i> Columns</strong> to show or hide the CUSIP, Country and Memo columns. Your choice is saved to your login.</li>
       <li>Click a column header to sort; <strong>Show unowned</strong> adds securities you don't hold. Both choices are saved to your login, so they follow you to other browsers and devices.</li>
-      <li>Click any security name to open its <strong>Security Page</strong> — a dedicated page showing a price history chart, cost basis and average cost per share, a <strong>Realized Sales</strong> section listing every sale with its short- and long-term gain (expand a sale to see the lots it sold, oldest first), and a complete transaction history across <em>all</em> accounts. The security's memo, if it has one, appears as a yellow <strong>MEMO</strong> note at the top. Use the <strong>Export CSV</strong> button on the Security Page to download the full transaction history (Date, Account, Activity, Shares, Price/Share, Commission, Total, Cleared, Memo).</li>
+      <li>Click any security name to open its <strong>Security Page</strong> — a dedicated page showing a price history chart (marked with a green <strong>B</strong> for each buy, a red <strong>S</strong> for each sale, a blue <strong>D</strong> below the line for each dividend or reinvested distribution date, and a purple <strong>S</strong> square above it for each recorded split), cost basis and average cost per share, a <strong>Realized Sales</strong> section listing every sale with its short- and long-term gain (expand a sale to see the lots it sold, oldest first), and a complete transaction history across <em>all</em> accounts. The security's memo, if it has one, appears as a yellow <strong>MEMO</strong> note at the top. Use the <strong>Export CSV</strong> button on the Security Page to download the full transaction history (Date, Account, Activity, Shares, Price/Share, Commission, Total, Cleared, Memo).</li>
+      <li><strong>Stock Splits</strong> — below the Security Page's price chart, record each split once with its ex-date and ratio (e.g. 3 new for 1 old). If an account already has a Split transaction with no recorded split, a one-click <strong>Record … split</strong> button offers it, with the ratio read from that account's share count. A recorded split shows as a purple <strong>S</strong> square on the price charts, and prices before it are shown split-adjusted on charts, in Performance Summary and Investment Performance returns, Top Movers, the Watchlist's 52-week range and returns, and day change. This is display-only: share counts come from each account's Split transaction, and stored prices, valuations and cost basis are unchanged. Price history that was already split-adjusted when it was downloaded is detected and left alone. If an account held shares going into a recorded split but has no Split transaction, the panel shows a red warning naming the account.</li>
       <li>The Security Page's <strong>Performance &amp; Cost Analysis</strong> section covers a date range you choose. Total Profit folds in realized gains/losses on any shares sold during that range (shown in their own <strong>Realized G/L</strong> column) alongside the change in unrealized gain/loss and any distributions received. A position fully sold out during the range still gets a row — shares and cost basis show as 0, with its realized profit from the sale(s) called out. Its Total Return % divides by the capital invested (cost basis at the start of the range plus buys and transfers in during it), so a position sold during the range still shows a meaningful return. Click <strong>Full Report</strong> to open the same security's <a href="#reports">Security History report</a>, which covers its entire lifetime and keeps working after it's no longer held.</li>
       <li>Click <strong>Fetch Prices</strong> to retrieve current quotes from a financial data source. A bulk fetch covers index symbols, watchlisted securities, and anything currently held — sold-off, un-watchlisted securities drop off the list automatically. Fetching a single security from its Price History panel always works regardless of these rules.</li>
       <li>Use <strong>Merge Securities</strong> to combine duplicate security records (e.g. the same ETF imported under slightly different names).</li>
@@ -1010,6 +1011,18 @@ pre code {
       pairs, or upload a CSV of historical prices. To remove all recorded prices for a security,
       click the <i class="bi bi-trash"></i> <strong>Clear History</strong> button in the panel footer.
     </p>
+    <p>
+      In line view, the panel's chart marks each dividend date with a blue <strong>D</strong>
+      below the price line and each recorded split with a purple <strong>S</strong> square above it.
+      The chart and table show prices before a recorded <a href="#portfolio">stock split</a>
+      split-adjusted, but <strong>Download CSV</strong> exports the prices exactly as stored, so a
+      downloaded file can be edited and uploaded back safely. Uploading overwrites existing prices
+      on the same dates. Stored prices before a split should be in pre-split terms, because
+      historical valuations multiply them by the pre-split share count. A history downloaded
+      by an earlier version of Steward may already be split-adjusted; to repair it, run
+      <strong>Fetch History</strong> for that security (see below), or multiply its pre-split rows
+      by the split ratio (and divide volume by it) and upload them back.
+    </p>
 
     <h3>Fetching Prices Automatically</h3>
     <p>
@@ -1021,6 +1034,28 @@ pre code {
       (from its Price History panel or a Watchlist row) still works for any security,
       regardless of this rule.
     </p>
+
+    <h3>Fetching Price History and Stock Splits</h3>
+    <p>
+      <strong>Fetch History</strong> on the Portfolio page downloads daily prices for a date range.
+      Prices are stored <strong>as they traded</strong>, not split-adjusted: Yahoo Finance adjusts
+      its history for later splits, so Steward reads Yahoo's split list and reverses the
+      adjustment (Massive is asked for unadjusted prices directly). Charts and returns still show
+      the history split-adjusted.
+    </p>
+    <ul>
+      <li>Splits Yahoo reports from the start of the range on are recorded automatically in the
+        security's <a href="#portfolio">Stock Splits</a>, unless one is already recorded within a
+        week of that date.</li>
+      <li>If a split falls in or after the requested range, the download goes back to the
+        security's earliest stored price, so older prices from a split-adjusted download don't
+        stay mixed in with as-traded ones.</li>
+      <li>As a safety check, downloaded prices are compared with your statement and manual
+        prices on the same dates. If they differ by about a split ratio, nothing is saved for that
+        security and the reason is shown.</li>
+      <li>Notes such as an extended range or a newly recorded split appear next to the
+        security in the fetch results.</li>
+    </ul>
 
     <h3>Scheduled Daily Price Refresh</h3>
     <p>
@@ -1077,7 +1112,7 @@ pre code {
       <tr><td>Sector Exposure</td><td>GICS sector breakdown of effective stock exposure — the same combined direct + fund-weighted exposure as Stock Exposure, grouped by sector (Information Technology, Financials, Energy, etc.) with a donut chart and per-sector security drill-down. See limitations below.</td></tr>
       <tr><td>Portfolio Withdrawals</td><td>For living off your investments: money moved from investment accounts (or their cash accounts) into checking, savings or credit card accounts, by month, split into retirement and non-retirement, with a chart, a by-account breakdown and CSV export. Click any amount to see the individual transfers. A sale inside an investment account isn't a withdrawal; only money that reaches a spending account is, including sale proceeds or dividends paid straight to one. Accounts marked <strong>Education Account (529)</strong> are always left out. The same withdrawals count as income in Income vs. Expense, Cash Flow, Income Analysis and Key Indicators (a dividend paid straight to a spending account is counted once, as investment income, wherever investment income is included).</td></tr>
       <tr><td>Investment Income</td><td>Dividends, interest, and capital gain distributions for a date range, read directly from investment activity — no category needed. Captures cash income recorded as <em>Dividend (Cash)</em> or <em>Interest (Cash)</em> activity, and amounts automatically reinvested into more shares (<em>Reinvest Dividend</em> / <em>Reinvest Cap Gain</em>). Shows totals by type, a monthly stacked chart, and a by-security breakdown. Supports CSV export. See <a href="#reports">Banking Income</a> for interest earned on cash accounts that isn't tied to a security.</td></tr>
-      <tr><td>Security History</td><td>Full lifetime history for one security — pick it from a dropdown, or open it via the <strong>Full Report</strong> button on that security's Portfolio page. Unlike Investment Performance (multi-security, a chosen date range, current holdings only), this defaults to the security's entire history from first transaction to today and keeps working after it's fully sold: a lifetime at-a-glance summary (realized profit, unrealized G/L, dividends, total profit), an embedded price chart with buy/sell markers, Performance Summary and Cost &amp; Profit Analysis for a range you can still narrow, and the full transaction history with CSV export. Printable.</td></tr>
+      <tr><td>Security History</td><td>Full lifetime history for one security — pick it from a dropdown, or open it via the <strong>Full Report</strong> button on that security's Portfolio page. Unlike Investment Performance (multi-security, a chosen date range, current holdings only), this defaults to the security's entire history from first transaction to today and keeps working after it's fully sold: a lifetime at-a-glance summary (realized profit, unrealized G/L, dividends, total profit), an embedded price chart with buy (<strong>B</strong>), sell (<strong>S</strong>), dividend (<strong>D</strong>) and split markers, Performance Summary and Cost &amp; Profit Analysis for a range you can still narrow, and the full transaction history with CSV export. Printable.</td></tr>
     </table>
 
     <h4>Stock Exposure &amp; Sector Exposure — Limitations</h4>
@@ -1487,7 +1522,8 @@ pre code {
       <tr><td><code>payees</code></td><td>Payee directory with optional default category and contact info.</td></tr>
       <tr><td><code>investments</code></td><td>Securities and market indices (ticker, type, CUSIP).</td></tr>
       <tr><td><code>investment_transactions</code></td><td>Investment activity detail linked to a parent transaction row. Activity types: <code>buy</code>, <code>sell</code>, <code>add</code>, <code>remove</code>, <code>split</code>, <code>reinvest_div</code>, <code>reinvest_cap</code>, <code>div</code> (dividend/cap-gain to cash), <code>int</code> (interest to cash). <code>acquired_date</code> holds the original purchase date of shares transferred in, so their FIFO lots keep the right holding period.</td></tr>
-      <tr><td><code>investment_prices</code></td><td>Historical daily price records per security.</td></tr>
+      <tr><td><code>investment_splits</code></td><td>Security-level stock splits: <code>split_date</code> (ex-date) and <code>ratio</code> (new shares per old share; 3 = 3-for-1, 0.1 = 1-for-10). Used only to show pre-split prices in post-split terms on charts and price-return figures.</td></tr>
+      <tr><td><code>investment_prices</code></td><td>Historical daily price records per security, stored as traded (not split-adjusted).</td></tr>
       <tr><td><code>scheduled_bills</code></td><td>Recurring bill and deposit templates. <code>due_day</code> keeps a bill's day of month so month-end bills don't drift.</td></tr>
       <tr><td><code>budgets</code> / <code>budget_categories</code></td><td>Budget definitions and their lines: entry type (monthly, annual, variable), amount, <code>due_months</code> for annual lines (e.g. <code>3,9</code>) and the <code>rollover</code> flag.</td></tr>
       <tr><td><code>budget_monthly_amounts</code></td><td>Per-month amounts for variable budget lines.</td></tr>

@@ -23,6 +23,10 @@
               <button class="ph-range-btn ph-range-active" data-range="1Y">1Y</button>
               <button class="ph-range-btn" data-range="ALL">All</button>
             </div>
+            <div class="small text-muted d-flex gap-3" id="phMarkerLegend" style="display:none!important">
+              <span id="phLegendDiv"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#1a5fb4;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">D</span> Dividend</span>
+              <span id="phLegendSplit"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#6f42c1;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">S</span> Split</span>
+            </div>
             <div class="ph-chart-type-btns" id="phChartTypeBtns" style="display:none">
               <button class="ph-chart-type-btn ph-chart-type-active" data-type="line">Line</button>
               <button class="ph-chart-type-btn" data-type="candle">Candle</button>
@@ -100,6 +104,8 @@
 (function () {
   let phChart    = null;
   let allPrices  = [];
+  let allSplits  = [];
+  let allDivs    = [];
   let allCompare = [];
   let activeRange = '1Y';
   let chartMode   = 'line';   // 'line' | 'candle'
@@ -214,6 +220,8 @@
         return;
       }
       allPrices = data.prices;
+      allSplits = data.splits || [];
+      allDivs   = data.dividends || [];
       activeRange = '1Y';
       document.getElementById('phContent').style.display = '';
       document.getElementById('phEmpty').style.display   = 'none';
@@ -409,6 +417,7 @@
   function renderChart(prices, cmpPrices) {
     const ctx      = document.getElementById('phChart').getContext('2d');
     if (phChart) phChart.destroy();
+    showMarkerLegend(false, false);   // markers are drawn in line mode only
 
     const comparing  = cmpPrices && cmpPrices.length > 0;
     const hasOHLCV   = !comparing && prices.some(p => p.open !== null);
@@ -512,11 +521,17 @@
           barPercentage: 1.0, categoryPercentage: 1.0, order: 2,
         });
       }
+      const first  = prices.length ? prices[0].date : '';
+      const splits = allSplits.filter(sp => sp.date >= first);
+      const divs   = allDivs.filter(d => d >= first);
+      showMarkerLegend(divs.length > 0, splits.length > 0);
       phChart = new Chart(ctx, {
         type: 'line',
         data: { labels: prices.map(p => p.date), datasets },
+        plugins: (splits.length || divs.length) ? [eventMarkerPlugin(splits, divs)] : [],
         options: {
           ...baseOptions(false, v => '$' + v.toFixed(2), ctx2 => '$' + ctx2.parsed.y.toFixed(2)),
+          layout: { padding: { top: splits.length ? 20 : 0, bottom: divs.length ? 20 : 0 } },
           scales: {
             x: { ticks: { maxTicksLimit: 8, font: { size: 10 }, color: '#888' }, grid: { color: '#eee' } },
             y: { ticks: { font: { size: 10 }, color: '#888', callback: v => '$' + v.toFixed(2) }, grid: { color: '#eee' } },
@@ -525,6 +540,60 @@
         },
       });
     }
+  }
+
+  // Purple "S" square above the price line on each split's ex-date (prices
+  // before it come split-adjusted from the server), blue "D" circle below
+  // it on each dividend date — same markers as the security page chart.
+  // A marker goes on the first chart date on or after the event.
+  function eventMarkerPlugin(splits, divs) {
+    return {
+      id: 'phEventMarkers',
+      afterDatasetsDraw(chart) {
+        const meta   = chart.getDatasetMeta(0);
+        const labels = chart.data.labels;
+        if (!meta || !meta.data.length) return;
+        const at = date => {
+          const i = labels.findIndex(d => d >= date);
+          return i < 0 ? null : meta.data[i];
+        };
+        const c = chart.ctx;
+        c.save();
+        c.font = 'bold 10px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        divs.forEach(date => {
+          const pt = at(date);
+          if (!pt) return;
+          const y = pt.y + 18;
+          c.beginPath();
+          c.arc(pt.x, y, 9, 0, Math.PI * 2);
+          c.fillStyle = '#1a5fb4';
+          c.fill();
+          c.fillStyle = '#fff';
+          c.fillText('D', pt.x, y);
+        });
+        splits.forEach(sp => {
+          const pt = at(sp.date);
+          if (!pt) return;
+          const y = pt.y - 18;
+          c.beginPath();
+          c.roundRect(pt.x - 9, y - 9, 18, 18, 3);
+          c.fillStyle = '#6f42c1';
+          c.fill();
+          c.fillStyle = '#fff';
+          c.fillText('S', pt.x, y);
+        });
+        c.restore();
+      },
+    };
+  }
+
+  // The legend starts as display:none!important (Bootstrap's d-flex would
+  // otherwise win over a plain display:none), so set it with !important too
+  function showMarkerLegend(hasDivs, hasSplits) {
+    const el = document.getElementById('phMarkerLegend');
+    el.style.setProperty('display', (hasDivs || hasSplits) ? 'flex' : 'none', 'important');
+    document.getElementById('phLegendDiv').style.display   = hasDivs   ? '' : 'none';
+    document.getElementById('phLegendSplit').style.display = hasSplits ? '' : 'none';
   }
 
   function baseOptions(showLegend, yFmt, tipFmt) {
@@ -630,10 +699,23 @@
   });
 
   // ── CSV Download ──────────────────────────────────────────────
-  document.getElementById('phDownloadCsvBtn').addEventListener('click', () => {
+  // Exports the stored rows (real_only), not the chart's: those are
+  // split-adjusted and gap-filled from transaction prices, and uploading
+  // them back would overwrite the stored history
+  document.getElementById('phDownloadCsvBtn').addEventListener('click', async () => {
     if (!allPrices.length) return;
+    let stored;
+    try {
+      const res  = await fetch(BASE_PATH + '/portfolio/price_history?investment_id=' + encodeURIComponent(curInvId) + '&real_only=1');
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      stored = data.prices;
+    } catch (e) {
+      alert('Could not load price history for download.');
+      return;
+    }
     const lines = ['date,open,high,low,close,volume,source'];
-    [...allPrices].sort((a, b) => a.date.localeCompare(b.date)).forEach(p => {
+    [...stored].sort((a, b) => a.date.localeCompare(b.date)).forEach(p => {
       lines.push([p.date, p.open ?? '', p.high ?? '', p.low ?? '',
                   p.close, p.volume ?? '', p.source].join(','));
     });

@@ -23,7 +23,22 @@ if (!$investment) {
     exit;
 }
 
-$priceRows = getInvestmentPriceHistory($investmentId, $realOnly);
+// Charts get split-adjusted prices; the manual price editor and CSV download
+// (real_only) get the stored rows as they are
+$priceRows = getInvestmentPriceHistory($investmentId, $realOnly, !$realOnly);
+$splits    = array_map(fn($sp) => ['date' => $sp['date'], 'ratio' => $sp['ratio']],
+                       getInvestmentSplits([$investmentId])[$investmentId] ?? []);
+
+// Dividend dates (cash or reinvested, any account) for the chart's D markers
+$divStmt = $db->prepare(
+    "SELECT DISTINCT t.transaction_date
+     FROM investment_transactions it
+     JOIN transactions t ON t.id = it.transaction_id
+     WHERE it.investment_id = ? AND it.activity IN ('div', 'reinvest_div', 'reinvest_cap')
+     ORDER BY t.transaction_date"
+);
+$divStmt->execute([$investmentId]);
+$dividends = $divStmt->fetchAll(PDO::FETCH_COLUMN);
 
 $holdingStmt = $db->prepare(
     'SELECT
@@ -73,5 +88,7 @@ echo json_encode([
             'quantity' => (float)$a['net_quantity'],
         ], $acctHoldings),
     ],
-    'prices' => $priceRows,
+    'prices'    => $priceRows,
+    'splits'    => $splits,
+    'dividends' => $dividends,
 ]);

@@ -142,10 +142,19 @@ $perfSeries = getInvestmentPerformanceSeries([$invId], $perfFrom, $effectivePerf
 $perfRow    = $perfSeries['series'][$invId] ?? null;
 $cpaRow     = getInvestmentCostProfitAnalysis([$invId], $perfFrom, $perfTo, true)[$invId] ?? null;
 
-// Buy/sell transactions for the inline price history chart markers
+// Buy/sell transactions for the inline price history chart markers, plus one
+// dividend marker per distribution date (cash or reinvested, any account)
 $chartTxns = [];
+$divDates  = [];
 foreach ($transactions as $txn) {
     $act = $txn['activity'] ?? '';
+    if (in_array($act, ['div', 'reinvest_div', 'reinvest_cap'], true)) {
+        if (!isset($divDates[$txn['transaction_date']])) {
+            $divDates[$txn['transaction_date']] = true;
+            $chartTxns[] = ['date' => $txn['transaction_date'], 'activity' => 'div'];
+        }
+        continue;
+    }
     if (!in_array($act, ['buy', 'sell'])) continue;
     $chartTxns[] = [
         'date'     => $txn['transaction_date'],
@@ -157,7 +166,10 @@ foreach ($transactions as $txn) {
 
 // Full price history, embedded server-side so the chart renders immediately
 // (including for print), rather than fetched async like the live portfolio page.
-$priceHistory = getInvestmentPriceHistory($invId);
+// Split-adjusted for display, with the recorded splits as chart markers.
+$priceHistory = getInvestmentPriceHistory($invId, false, true);
+$chartSplits  = array_map(fn($sp) => ['date' => $sp['date'], 'ratio' => $sp['ratio']],
+                          getInvestmentSplits([$invId])[$invId] ?? []);
 
 include __DIR__ . '/../includes/header.php';
 ?>
@@ -178,6 +190,7 @@ const SEC_TRANSACTIONS = <?= json_encode(array_map(fn($t) => [
 ], $transactions)) ?>;
 const CHART_TXNS    = <?= json_encode($chartTxns) ?>;
 const PRICE_HISTORY = <?= json_encode($priceHistory) ?>;
+const CHART_SPLITS  = <?= json_encode($chartSplits) ?>;
 </script>
 
 <?php $reportFavTitle = 'Security History — ' . ($symbol ?: $invName); $reportFavIcon = 'bi-clock-history'; ?>
@@ -284,6 +297,12 @@ const PRICE_HISTORY = <?= json_encode($priceHistory) ?>;
   <div class="d-flex align-items-center gap-3 mt-2 small text-muted">
     <span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#1a7a3c;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">B</span> Buy</span>
     <span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#c0392b;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">S</span> Sell</span>
+    <?php if ($divDates): ?>
+    <span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#1a5fb4;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">D</span> Dividend</span>
+    <?php endif; ?>
+    <?php if ($chartSplits): ?>
+    <span><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#6f42c1;color:#fff;font-weight:700;font-size:9px;line-height:14px;text-align:center">S</span> Split (earlier prices split-adjusted)</span>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -607,8 +626,30 @@ const PRICE_HISTORY = <?= json_encode($priceHistory) ?>;
       markers.forEach(m => {
         const pt = findNearest(m.date, labels, ptMap);
         if (!pt) return;
-        const isBuy = m.activity === 'buy';
         ctx.beginPath();
+        if (m.activity === 'split') {
+          // Rounded square (Sell is a circle), above the line so it doesn't
+          // sit on top of a B/S on the same day
+          const y = pt.y - 18;
+          ctx.roundRect(pt.x - 9, y - 9, 18, 18, 3);
+          ctx.fillStyle = '#6f42c1';
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText('S', pt.x, y);
+          return;
+        }
+        if (m.activity === 'div') {
+          // Below the line, so it stays clear of a B/S on the line and a
+          // split marker above it on the same day
+          const y = pt.y + 18;
+          ctx.arc(pt.x, y, 9, 0, Math.PI * 2);
+          ctx.fillStyle = '#1a5fb4';
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText('D', pt.x, y);
+          return;
+        }
+        const isBuy = m.activity === 'buy';
         ctx.arc(pt.x, pt.y, 9, 0, Math.PI * 2);
         ctx.fillStyle = isBuy ? '#1a7a3c' : '#c0392b';
         ctx.fill();
@@ -641,7 +682,8 @@ const PRICE_HISTORY = <?= json_encode($priceHistory) ?>;
 
   function renderChart() {
     const prices = filterByRange(PRICE_HISTORY, activeRange, 'date');
-    const txns   = filterByRange(CHART_TXNS, activeRange, 'date');
+    const txns   = filterByRange(CHART_TXNS, activeRange, 'date')
+      .concat(filterByRange(CHART_SPLITS, activeRange, 'date').map(sp => ({ date: sp.date, activity: 'split' })));
 
     const canvas = document.getElementById('secPhChart');
     if (secChart) { secChart.destroy(); secChart = null; }
@@ -677,6 +719,7 @@ const PRICE_HISTORY = <?= json_encode($priceHistory) ?>;
         animation:          false,
         responsive:         true,
         maintainAspectRatio: false,
+        layout:             { padding: { top: 20, bottom: 20 } },
         plugins: {
           legend: { display: false },
           tooltip: {

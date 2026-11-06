@@ -118,7 +118,7 @@ function showFetchSummary(data, mode, remember = true) {
       ? '<span class="text-muted">—</span>'
       : `<span class="inv-gain ${changePct >= 0 ? 'gain-pos' : 'gain-neg'}">${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%</span>`;
     const statusHtml = r.status === 'ok'
-      ? `<span class="text-success"><i class="bi bi-check-circle-fill"></i></span>`
+      ? `<span class="text-success"><i class="bi bi-check-circle-fill"></i>${r.message ? ' ' + fsEsc(r.message) : ''}</span>`
       : `<span class="text-danger" title="${fsEsc(r.message)}"><i class="bi bi-x-circle-fill"></i> ${fsEsc(r.message)}</span>`;
     tr.dataset.symbol    = r.symbol || '';
     tr.dataset.name      = r.name || '';
