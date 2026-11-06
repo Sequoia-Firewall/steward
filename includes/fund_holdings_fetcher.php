@@ -52,6 +52,16 @@ class FundHoldingsFetcher {
         return $stmt->fetchAll();
     }
 
+    /** Returns the source of the latest cached data ('vanguard', 'alphavantage', 'no_data'), or null if never fetched. */
+    public function getSource(string $symbol): ?string {
+        $stmt = $this->db->prepare(
+            "SELECT source FROM fund_holdings WHERE fund_symbol = ? ORDER BY fetched_at DESC LIMIT 1"
+        );
+        $stmt->execute([strtoupper(trim($symbol))]);
+        $v = $stmt->fetchColumn();
+        return $v !== false ? $v : null;
+    }
+
     /** Returns the most recent fetch timestamp for a symbol, or null if never. */
     public function getFetchedAt(string $symbol): ?string {
         $stmt = $this->db->prepare(
@@ -104,7 +114,9 @@ class FundHoldingsFetcher {
             $avKey = function_exists('getSetting') ? getSetting('alphavantage_api_key') : null;
             foreach ($needAV as $sym) {
                 $holdings = $avKey ? $this->fetchAlphaVantage($sym, $avKey) : null;
-                if (!empty($holdings)) {
+                // For bond ETFs AlphaVantage returns a stray row or two (e.g. one bond-ETF row at 0.01%).
+                // Under 1% total weight isn't usable exposure data, so treat it as empty.
+                if (!empty($holdings) && array_sum(array_column($holdings, 'weight')) >= 1.0) {
                     $this->storeHoldings($sym, $holdings, 'alphavantage');
                     $results[$sym] = count($holdings);
                 } else {

@@ -838,3 +838,85 @@ function classifyNonEquity(string $rawSymbol): ?string {
 
     return null; // looks like a real equity — proceed with GICS lookup
 }
+
+/**
+ * Approximate GICS sector for an SEC SIC code (from EDGAR company filings).
+ * SIC classifies by product, so some companies land differently than GICS
+ * would place them (e.g. Howmet Aerospace files as nonferrous metals →
+ * Materials, where GICS says Industrials). Good enough for a sector rollup.
+ * Returns null for unclassifiable codes (blank checks, 99xx, etc.).
+ */
+function sicToGicsSector(int $sic): ?string {
+    if ($sic <= 0) return null;
+
+    // Specific 4-digit carve-outs first, then 2-digit major groups
+    $ranges = [
+        [1531, 1531, 'Consumer Discretionary'], // homebuilders
+        [2830, 2836, 'Health Care'],            // pharmaceuticals, biologicals
+        [2840, 2844, 'Consumer Staples'],       // soap, detergents, cosmetics
+        [3011, 3011, 'Consumer Discretionary'], // tires
+        [3570, 3579, 'Information Technology'], // computers & office equipment
+        [3600, 3629, 'Industrials'],            // electrical equipment & apparatus
+        [3630, 3639, 'Consumer Discretionary'], // household appliances
+        [3651, 3652, 'Consumer Discretionary'], // household audio/video
+        [3710, 3716, 'Consumer Discretionary'], // motor vehicles & parts
+        [3751, 3751, 'Consumer Discretionary'], // motorcycles, bicycles
+        [3812, 3812, 'Industrials'],            // defense electronics, navigation
+        [3820, 3829, 'Information Technology'], // measuring & controlling instruments
+        [3840, 3851, 'Health Care'],            // medical instruments & supplies
+        [3860, 3861, 'Information Technology'], // photographic equipment
+        [4920, 4925, 'Energy'],                 // natural gas transmission (pipelines)
+        [4950, 4959, 'Industrials'],            // waste management
+        [5045, 5045, 'Information Technology'], // computer equipment wholesale
+        [5047, 5047, 'Health Care'],            // medical equipment wholesale
+        [5122, 5122, 'Health Care'],            // drug wholesale
+        [5140, 5149, 'Consumer Staples'],       // grocery wholesale
+        [5170, 5172, 'Energy'],                 // petroleum products wholesale
+        [5331, 5331, 'Consumer Staples'],       // variety stores
+        [5399, 5399, 'Consumer Staples'],       // misc general merchandise (warehouse clubs)
+        [5400, 5499, 'Consumer Staples'],       // food stores
+        [5912, 5912, 'Consumer Staples'],       // drug stores
+        [6770, 6770, null],                     // blank checks (SPACs)
+        [6798, 6798, 'Real Estate'],            // REITs
+        [7310, 7319, 'Communication Services'], // advertising
+        [7370, 7379, 'Information Technology'], // software & IT services
+        [7810, 7899, 'Communication Services'], // motion pictures, entertainment
+        [8000, 8099, 'Health Care'],            // health services
+        [8731, 8731, 'Health Care'],            // commercial physical & biological research
+    ];
+    foreach ($ranges as [$lo, $hi, $sector]) {
+        if ($sic >= $lo && $sic <= $hi) return $sector;
+    }
+
+    $major = intdiv($sic, 100);
+    return match (true) {
+        $major >= 1  && $major <= 9  => 'Consumer Staples',       // agriculture, forestry, fishing
+        $major === 10, $major === 14 => 'Materials',              // metal & nonmetal mining
+        $major === 12, $major === 13 => 'Energy',                 // coal, oil & gas extraction
+        $major >= 15 && $major <= 17 => 'Industrials',            // construction
+        $major === 20, $major === 21 => 'Consumer Staples',       // food, tobacco
+        $major === 22, $major === 23, $major === 25, $major === 31, $major === 39
+                                     => 'Consumer Discretionary', // textiles, apparel, furniture, leather, misc mfg
+        $major === 24, $major === 26, $major === 28, $major === 30, $major === 32, $major === 33
+                                     => 'Materials',              // lumber, paper, chemicals, plastics, glass, metals
+        $major === 27                => 'Communication Services', // publishing
+        $major === 29                => 'Energy',                 // petroleum refining
+        $major === 34, $major === 35, $major === 37
+                                     => 'Industrials',            // fabricated metal, machinery, transport equipment
+        $major === 36, $major === 38 => 'Information Technology', // electronics, instruments
+        $major >= 40 && $major <= 47 => 'Industrials',            // transportation
+        $major === 48                => 'Communication Services', // telecom, broadcasting
+        $major === 49                => 'Utilities',
+        $major === 50, $major === 51 => 'Industrials',            // wholesale trade
+        $major >= 52 && $major <= 59 => 'Consumer Discretionary', // retail, restaurants
+        $major >= 60 && $major <= 64 => 'Financials',             // banks, brokers, insurance
+        $major === 65                => 'Real Estate',
+        $major === 67                => 'Financials',             // holding & investment companies
+        $major === 70, $major === 72, $major === 75, $major === 79, $major === 82
+                                     => 'Consumer Discretionary', // hotels, personal svcs, auto repair, leisure, education
+        $major === 73, $major === 76, $major === 87
+                                     => 'Industrials',            // business, repair, engineering services
+        $major === 80, $major === 83 => 'Health Care',            // health, social services
+        default                      => null,                     // 99xx nonclassifiable, government, etc.
+    };
+}

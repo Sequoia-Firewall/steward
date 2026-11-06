@@ -6,6 +6,9 @@ class SectorFetcher {
     private PDO $db;
     private int $cacheDays = 90;
 
+    /** SEC EDGAR fair-access policy requires a descriptive User-Agent with a contact address. */
+    private const SEC_USER_AGENT = 'Steward webmaster@7312.us';
+
     public function __construct(PDO $db) {
         $this->db = $db;
         $this->ensureTable();
@@ -27,7 +30,7 @@ class SectorFetcher {
 
     /**
      * Return sector data for all given symbols.
-     * Priority: static map → DB cache → AlphaVantage OVERVIEW (rate-limited).
+     * Priority: static map → DB cache (filled by SEC SIC / AlphaVantage via the refresh endpoint).
      * Returns ['AAPL' => ['sector'=>'...','industry'=>'...','source'=>'...'], ...]
      * Missing symbols get ['sector'=>'Unknown','industry'=>'','source'=>'none'].
      */
@@ -120,6 +123,68 @@ class SectorFetcher {
         return $results;
     }
 
+    /**
+     * Classify symbols via SEC EDGAR: ticker → CIK (company_tickers.json),
+     * then the company's SIC code (submissions API) → approximate GICS sector.
+     * Free with no daily cap (unlike AlphaVantage's 25/day), so it runs first.
+     * Covers US listings and foreign issuers that file with the SEC. Retries
+     * symbols AlphaVantage previously cached as no_data. Symbols not on file
+     * with SEC are left uncached so the AlphaVantage pass can still try them.
+     * Stops after $timeBudget seconds to stay inside the web request limit.
+     * Returns [symbol => bool].
+     */
+    public function fetchMissingFromSec(array $symbols, float $timeBudget = 15.0): array {
+        $start = microtime(true);
+        $todo  = [];
+        foreach (array_unique(array_map('strtoupper', $symbols)) as $sym) {
+            if (getStaticSector($sym) === null) $todo[] = $sym;
+        }
+        if (empty($todo)) return [];
+
+        // Skip symbols that already have a real (non-placeholder) cached sector
+        $ph   = implode(',', array_fill(0, count($todo), '?'));
+        $stmt = $this->db->prepare(
+            "SELECT symbol FROM stock_sectors WHERE symbol IN ($ph)
+               AND source NOT IN ('none', 'no_data')
+               AND fetched_at > DATE_SUB(NOW(), INTERVAL ? DAY)"
+        );
+        $stmt->execute(array_merge($todo, [$this->cacheDays]));
+        $todo = array_values(array_diff($todo, array_column($stmt->fetchAll(), 'symbol')));
+        if (empty($todo)) return [];
+
+        $data = json_decode($this->httpGet('https://www.sec.gov/files/company_tickers.json') ?? '', true);
+        if (!is_array($data)) return [];
+        $cikByTicker = [];
+        foreach ($data as $row) {
+            $t = strtoupper((string)($row['ticker'] ?? ''));
+            if ($t !== '') $cikByTicker[$t] = (int)($row['cik_str'] ?? 0);
+        }
+
+        $results = [];
+        foreach ($todo as $sym) {
+            if (microtime(true) - $start > $timeBudget) break;
+            // SEC writes share classes with a dash: BRK.B / HEI/A → BRK-B / HEI-A
+            $cik = $cikByTicker[str_replace(['.', '/'], '-', $sym)] ?? 0;
+            if (!$cik) continue;
+
+            $info = json_decode($this->httpGet(sprintf('https://data.sec.gov/submissions/CIK%010d.json', $cik)) ?? '', true);
+            usleep(110000); // SEC fair-access limit is 10 requests/second
+            $sector = is_array($info) ? sicToGicsSector((int)($info['sic'] ?? 0)) : null;
+            if ($sector === null) {
+                // On file with SEC but the SIC code is unmappable (shells, 9995) — cache so later
+                // clicks skip it. A failed fetch stays uncached so it is retried.
+                if (is_array($info)) $this->storeCache($sym, 'Unknown', '', 'sec_unmapped');
+                $results[$sym] = false;
+                continue;
+            }
+
+            $industry = ucwords(strtolower(preg_replace('/\s+/', ' ', trim((string)($info['sicDescription'] ?? '')))));
+            $this->storeCache($sym, $sector, substr($industry, 0, 100), 'sec_sic');
+            $results[$sym] = true;
+        }
+        return $results;
+    }
+
     /** Return count of symbols with cached (non-static) sector data. */
     public function getCacheStats(): array {
         $stmt = $this->db->query(
@@ -153,10 +218,49 @@ class SectorFetcher {
         if (isset($data['Information']) || isset($data['Note'])) return null; // rate limit
         if (empty($data['Sector'])) return null;
 
-        return [
-            'sector'   => $data['Sector']   ?? 'Unknown',
-            'industry' => $data['Industry'] ?? '',
+        // AlphaVantage returns Morningstar-style uppercase labels ("TECHNOLOGY",
+        // "CONSUMER CYCLICAL"); map them to GICS so they merge with static-map sectors
+        $avToGics = [
+            'TECHNOLOGY'             => 'Information Technology',
+            'INFORMATION TECHNOLOGY' => 'Information Technology',
+            'INDUSTRIALS'            => 'Industrials',
+            'HEALTHCARE'             => 'Health Care',
+            'HEALTH CARE'            => 'Health Care',
+            'FINANCIAL SERVICES'     => 'Financials',
+            'FINANCIALS'             => 'Financials',
+            'CONSUMER CYCLICAL'      => 'Consumer Discretionary',
+            'CONSUMER DISCRETIONARY' => 'Consumer Discretionary',
+            'CONSUMER DEFENSIVE'     => 'Consumer Staples',
+            'CONSUMER STAPLES'       => 'Consumer Staples',
+            'COMMUNICATION SERVICES' => 'Communication Services',
+            'ENERGY'                 => 'Energy',
+            'UTILITIES'              => 'Utilities',
+            'REAL ESTATE'            => 'Real Estate',
+            'BASIC MATERIALS'        => 'Materials',
+            'MATERIALS'              => 'Materials',
         ];
+        $sector = strtoupper(trim($data['Sector']));
+
+        return [
+            'sector'   => $avToGics[$sector] ?? ucwords(strtolower($sector)),
+            'industry' => substr(ucwords(strtolower(trim($data['Industry'] ?? ''))), 0, 100),
+        ];
+    }
+
+    private function httpGet(string $url): ?string {
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_HTTPHEADER     => ['User-Agent: ' . self::SEC_USER_AGENT, 'Accept: application/json'],
+            CURLOPT_ENCODING       => '', // accept gzip — submissions JSON can be several hundred KB
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $raw  = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        return ($raw !== false && $code === 200 && $raw !== '') ? $raw : null;
     }
 
     private function storeCache(string $symbol, string $sector, string $industry, string $source): void {

@@ -108,9 +108,21 @@ $holdingsFetcher->batchFetch($fundSymbols);
 // [uppercase_symbol => ['name'=>..., 'value'=>float]]
 $exposure = [];
 
+// Direct non-stock positions (collective trusts, cash sweeps, CDs, bonds) get their
+// bucket from the investment type — no sector source knows their tickers
+$TYPE_SECTORS = [
+    'Money Market'       => 'Cash & Equivalents',
+    'CD or Savings Bond' => 'Fixed Income',
+    'Bond'               => 'Fixed Income',
+    'Cryptocurrency'     => 'Crypto',
+    'Other'              => 'Other Funds',
+];
+$typeSectors = [];
+
 foreach ($directPositions as $p) {
     $key = $p['symbol'] ?: $p['inv_name'];
     $exposure[$key] = ($exposure[$key] ?? 0.0) + $p['mv'];
+    if (isset($TYPE_SECTORS[$p['inv_type']])) $typeSectors[strtoupper($key)] = $TYPE_SECTORS[$p['inv_type']];
 }
 
 foreach ($fundPositions as $p) {
@@ -133,7 +145,7 @@ $filteredExposure = [];
 $pseudoSectors    = []; // [sym => pseudo-sector string]
 
 foreach ($exposure as $sym => $value) {
-    $nonEquity = classifyNonEquity($sym);
+    $nonEquity = $typeSectors[strtoupper($sym)] ?? classifyNonEquity($sym);
     if ($nonEquity === '__filter__') continue; // drop garbage tickers
     if ($nonEquity !== null) {
         $pseudoSectors[$sym] = $nonEquity;
@@ -214,7 +226,7 @@ $coveredPct  = $portfolioMV > 0 ? $totalIdentified / $portfolioMV * 100 : 0;
 $classifiedPct = $totalIdentified > 0 ? (1 - $unclassifiedValue / $totalIdentified) * 100 : 0;
 $sectorCount = count(array_filter(array_keys($bySector), fn($s) => $s !== 'Unknown'));
 
-// Unknown equity symbols that could be fetched from AlphaVantage
+// Unknown equity symbols for Classify More (SEC SIC, then AlphaVantage), largest first
 $unknownSymbols = array_values(array_filter(
     array_keys($filteredExposure),
     fn($s) => !isset($pseudoSectors[$s])
@@ -283,7 +295,8 @@ include __DIR__ . '/../includes/header.php';
   <div>
     <strong><?= number_format(100 - $classifiedPct, 1) ?>%</strong> of identified exposure
     (<strong><?= formatMoney($unclassifiedValue) ?></strong>) has no sector classification.
-    Click <strong>Classify More</strong> to fetch sector data from AlphaVantage for up to 20 symbols.
+    Click <strong>Classify More</strong> to look up sectors for the largest unclassified holdings
+    (SEC industry codes, then AlphaVantage for up to 20 more).
   </div>
   <button type="button" class="btn btn-sm btn-info ms-auto" id="btnClassify">
     <i class="bi bi-tags"></i> Classify More
@@ -385,7 +398,8 @@ include __DIR__ . '/../includes/header.php';
 
 <p class="text-muted small d-print-none mt-1">
   Exposure combines direct stock holdings with weighted ETF/fund constituents.
-  Sector classification uses static GICS data for S&P 500 stocks, with AlphaVantage OVERVIEW as fallback.
+  Sector classification uses static GICS data for common stocks; Classify More fills the rest from
+  SEC industry (SIC) codes, mapped to the nearest GICS sector, and then AlphaVantage OVERVIEW.
 </p>
 
 <?php endif; ?>
@@ -398,7 +412,7 @@ include __DIR__ . '/../includes/header.php';
   const BASE         = <?= json_encode(BASE_PATH) ?>;
   const totalIdent   = <?= round($totalIdentified, 2) ?>;
   const totalPort    = <?= round($portfolioMV, 2) ?>;
-  const unknownSyms  = <?= json_encode(array_slice($unknownSymbols, 0, 20)) ?>;
+  const unknownSyms  = <?= json_encode(array_slice($unknownSymbols, 0, 200)) ?>;
 
   // ── Donut chart ──────────────────────────────────────────────
   const ctx = document.getElementById('sectorChart');

@@ -413,8 +413,8 @@ $hasFunds       = $fundCount > 0;
   </tbody>
 </table>
 <p class="text-muted small d-print-none">
-  Coverage = sum of tracked constituent weights. Most ETFs report top 10–25 holdings via Yahoo Finance,
-  which captures the largest concentrations. Use Refresh to update stale data.
+  Coverage = sum of tracked constituent weights. Holdings come from Vanguard's public API or
+  AlphaVantage ETF_PROFILE, which reports each fund's largest positions. Use Refresh to update stale data.
 </p>
 <?php endif; ?>
 

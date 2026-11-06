@@ -23,7 +23,7 @@ if ($raw === '') {
 
 $symbols = array_values(array_unique(array_filter(
     array_map('trim', explode(',', $raw)),
-    fn($s) => preg_match('/^[A-Za-z0-9.\-]{1,20}$/', $s)
+    fn($s) => preg_match('/^[A-Za-z0-9.\/\-]{1,20}$/', $s)
 )));
 
 if (empty($symbols)) {
@@ -32,9 +32,16 @@ if (empty($symbols)) {
     exit;
 }
 
+// SEC lookups can take ~20s; PHP-FPM's default max_execution_time is 30
+set_time_limit(60);
+
 $db      = getDB();
 $fetcher = new SectorFetcher($db);
-$results = $fetcher->fetchMissingFromAV($symbols, 20);
+
+// SEC first (free, no daily cap); AlphaVantage only for what SEC couldn't classify
+$results   = $fetcher->fetchMissingFromSec($symbols, 20.0);
+$remaining = array_values(array_filter($symbols, fn($s) => empty($results[strtoupper($s)])));
+$results  += $fetcher->fetchMissingFromAV($remaining, 20);
 
 $out = [];
 foreach ($results as $sym => $ok) {
